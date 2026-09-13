@@ -9,6 +9,8 @@ functions.
 [![npm downloads](https://img.shields.io/npm/dm/convex-livekit.svg)](https://www.npmjs.com/package/convex-livekit)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+![convex-livekit demo](./demo.png)
+
 ```ts
 const livekit = new LiveKit(components.convexLivekit, {
   apiKey: process.env.LIVEKIT_API_KEY!,
