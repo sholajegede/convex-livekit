@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.2
+
+### Patch Changes
+
+- Add demo screenshot to README
+
 ## 0.0.1
 
 - Keep a room's participant count current instead of frozen at room_started,
