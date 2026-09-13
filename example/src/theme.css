@@ -1,0 +1,685 @@
+:root {
+  --bg: #070b0d;
+  --bg-raised: #0c1316;
+  --border: #1c2a2e;
+  --border-soft: #142023;
+  --text: #eaf6f6;
+  --text-dim: #8fa8ab;
+  --text-faint: #5c7275;
+
+  --cyan: #22d3ee;
+  --cyan-bright: #67e8f9;
+  --cyan-deep: #0e7490;
+  --amber: #f5b942;
+  --red: #f2545b;
+
+  --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+body {
+  background-image:
+    linear-gradient(var(--border-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+}
+
+a {
+  color: var(--cyan-bright);
+}
+
+code,
+pre {
+  font-family: var(--mono);
+}
+
+/* ─── Shell layout ─────────────────────────────────────────────────────── */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2.5rem 1.75rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.main.wide {
+  max-width: 1240px;
+}
+
+.console {
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-raised);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    flex-direction: column;
+  }
+  .console {
+    width: 100%;
+    height: 360px;
+    position: static;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+  .main {
+    padding: 1.5rem 1rem 2rem;
+  }
+}
+
+/* ─── Console (Activity log) ───────────────────────────────────────────── */
+
+.console-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.console-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.log-entry {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  background: var(--bg);
+}
+
+.log-entry.error {
+  border-color: var(--red);
+}
+
+.log-entry .log-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-dim);
+  margin-bottom: 0.25rem;
+}
+
+.log-entry .log-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.log-entry .log-detail {
+  color: var(--text-dim);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.log-entry.error .log-detail {
+  color: var(--red);
+}
+
+.console-empty {
+  padding: 1.5rem;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* ─── Hero ──────────────────────────────────────────────────────────────── */
+
+.hero-frame {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-raised);
+  padding: 1.75rem 1.75rem 0;
+  overflow: hidden;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+.hero-stats b {
+  color: var(--cyan-bright);
+  font-weight: 600;
+}
+
+.hero-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 1.25rem -1.75rem;
+}
+
+.hero-main {
+  text-align: center;
+  padding-bottom: 1.5rem;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 1rem;
+}
+
+.logo-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--cyan);
+  color: #06232a;
+  font-weight: 800;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-title {
+  font-size: 2rem;
+  line-height: 1.25;
+  margin: 0 0 0.75rem;
+  font-weight: 650;
+}
+
+.hero-title .hl {
+  color: var(--cyan-bright);
+}
+
+.hero-sub {
+  color: var(--text-dim);
+  max-width: 560px;
+  margin: 0 auto 1.75rem;
+  line-height: 1.55;
+}
+
+/* ─── Flow diagram ──────────────────────────────────────────────────────── */
+
+.flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0 auto 0.75rem;
+  flex-wrap: wrap;
+}
+
+.flow-node {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.flow-node.accent {
+  border-color: var(--cyan-deep);
+  color: var(--cyan-bright);
+}
+
+.flow-arrow {
+  color: var(--text-faint);
+  font-size: 0.95rem;
+}
+
+.flow-caption {
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  max-width: 480px;
+  margin: 0 auto 1.5rem;
+}
+
+/* ─── Tabs ──────────────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-top: 1px solid var(--border);
+  margin: 0 -1.75rem;
+  padding: 0 1.75rem;
+}
+
+.tab {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  color: var(--cyan-bright);
+  border-bottom-color: var(--cyan);
+}
+
+/* ─── Banner ────────────────────────────────────────────────────────────── */
+
+.banner {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.banner code {
+  color: var(--cyan-bright);
+  font-size: 0.8em;
+}
+
+/* ─── Cards, fields, buttons ────────────────────────────────────────────── */
+
+.card {
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.card h3 {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.field label {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+.field input,
+.field textarea,
+.field select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-family: var(--sans);
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--cyan-deep);
+}
+
+.field-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.field-row .field {
+  flex: 1;
+  min-width: 160px;
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.55rem 1.15rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--sans);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--cyan);
+  color: #06232a;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--cyan-bright);
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--cyan-deep);
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(242, 84, 91, 0.1);
+}
+
+.btn-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* ─── Badges, chips, status dot ─────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.badge-good {
+  border-color: var(--cyan-deep);
+  color: var(--cyan-bright);
+}
+
+.badge-bad {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.badge-pending {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.chip {
+  display: inline-block;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.1rem 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--text-faint);
+}
+
+.status-dot.good {
+  background: var(--cyan);
+}
+
+.status-dot.bad {
+  background: var(--red);
+}
+
+.status-dot.pending {
+  background: var(--amber);
+}
+
+.status-dot.pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.empty {
+  color: var(--text-faint);
+  font-size: 0.84rem;
+  text-align: center;
+  padding: 1.75rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+/* ─── Rooms / participants / egress lists ──────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.list-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg);
+}
+
+.list-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.list-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.list-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.list-sub {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.list-participants {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.participant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.participant-row .identity {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--mono);
+}
+
+/* ─── Webhook deliveries ────────────────────────────────────────────────── */
+
+.obs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.obs-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg);
+  font-size: 0.78rem;
+}
+
+.obs-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+
+.obs-type {
+  color: var(--cyan-bright);
+}
+
+.obs-payload {
+  color: var(--text-dim);
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* ─── Join panel / live room ────────────────────────────────────────────── */
+
+.join-stage {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  min-height: 620px;
+}
+
+.join-placeholder {
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.join-live-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--cyan-bright);
+  margin-bottom: 0.75rem;
+}
+
+/* ─── LiveKit components-react theme override ──────────────────────────── */
+/* Re-skins @livekit/components-styles' default (generic dark/blue) theme to
+   match convex-livekit's own palette, and caps the chat drawer's width so
+   it fits inside .join-stage instead of overflowing it. */
+
+[data-lk-theme="default"] {
+  --lk-bg: var(--bg-raised);
+  --lk-bg2: #0f181b;
+  --lk-bg3: #162326;
+  --lk-bg4: var(--border);
+  --lk-bg5: #24363b;
+  --lk-fg: var(--text);
+  --lk-fg2: var(--text);
+  --lk-fg3: var(--text-dim);
+  --lk-fg4: var(--text-dim);
+  --lk-fg5: var(--text-faint);
+  --lk-border-color: var(--border);
+  --lk-border-radius: 10px;
+  --lk-font-family: var(--sans);
+  --lk-accent-fg: #06232a;
+  --lk-accent-bg: var(--cyan);
+  --lk-accent2: var(--cyan-bright);
+  --lk-accent3: var(--cyan-bright);
+  --lk-accent4: var(--cyan-deep);
+  --lk-control-fg: var(--text);
+  --lk-control-bg: var(--bg-raised);
+  --lk-control-hover-bg: #162326;
+  --lk-control-active-bg: var(--cyan-deep);
+  --lk-control-active-hover-bg: var(--cyan);
+  --lk-danger: var(--red);
+}
+
+.join-stage .lk-chat {
+  width: min(320px, 40%);
+}
+
