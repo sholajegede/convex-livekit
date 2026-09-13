@@ -13,3 +13,13 @@ node_modules
 # npm pack output
 *.tgz
 *.tsbuildinfo
+
+# Convex CLI's auto-generated agent-onboarding files (from `npx convex
+# dev`) and local agent-skill scaffolding — kept out so the repo carries
+# no footprint of which coding agent worked on it.
+/CLAUDE.md
+/AGENTS.md
+/.claude/
+/.agents/
+/skills-lock.json
+/example/convex/_generated/ai/
