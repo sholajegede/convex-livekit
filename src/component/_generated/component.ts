@@ -10,9 +10,6 @@
 
 import type { FunctionReference } from "convex/server";
 
-type RoomStatus = "started" | "finished";
-type ParticipantState = "joined" | "left";
-
 /**
  * A utility for referencing a Convex component's exposed API.
  *
@@ -68,7 +65,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           numParticipants?: number;
           sid?: string;
           startedAt?: number;
-          status: RoomStatus;
+          status: "started" | "finished";
           updatedAt: number;
         },
         Name
@@ -106,7 +103,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           name?: string;
           participantSid: string;
           roomName: string;
-          state: ParticipantState;
+          state: "joined" | "left";
           updatedAt: number;
         }>,
         Name
@@ -127,7 +124,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           numParticipants?: number;
           sid?: string;
           startedAt?: number;
-          status: RoomStatus;
+          status: "started" | "finished";
           updatedAt: number;
         }>,
         Name
@@ -150,6 +147,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         { metadata: string; name: string },
+        null,
+        Name
+      >;
+      patchRoomParticipantCount: FunctionReference<
+        "mutation",
+        "internal",
+        { name: string; numParticipants: number },
         null,
         Name
       >;
@@ -178,7 +182,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           name?: string;
           participantSid: string;
           roomName: string;
-          state: ParticipantState;
+          state: "joined" | "left";
         },
         string,
         Name
@@ -195,7 +199,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           numParticipants?: number;
           sid?: string;
           startedAt?: number;
-          status: RoomStatus;
+          status: "started" | "finished";
         },
         string,
         Name
