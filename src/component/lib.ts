@@ -170,6 +170,29 @@ export const patchRoomMetadata = mutation({
   },
 });
 
+// Kept separate from recordRoom: room_started is the only event that carries
+// enough context to justify a full upsert, but participant_joined/left and
+// room_finished all include the same live `room.numParticipants` count in
+// their payload too. Syncing it here (rather than only on room_started)
+// keeps the field current instead of frozen at whatever it was when the
+// room started.
+export const patchRoomParticipantCount = mutation({
+  args: { name: v.string(), numParticipants: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("rooms")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .first();
+    if (!existing) return null;
+    await ctx.db.patch(existing._id, {
+      numParticipants: args.numParticipants,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const recordParticipant = mutation({
   args: {
     participantSid: v.string(),

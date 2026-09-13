@@ -247,6 +247,17 @@ export class LiveKit {
       const participant = event.participant as Record<string, unknown> | undefined;
       const egressInfo = event.egressInfo as Record<string, unknown> | undefined;
 
+      // room_started/room_finished/participant_joined/participant_left all
+      // embed the same live Room object — sync numParticipants off whichever
+      // one arrives, not just room_started, so it never goes stale. No-ops
+      // if the room isn't recorded yet or the field is absent from this event.
+      if (room && typeof room.numParticipants === "number") {
+        await ctx.runMutation(component_.lib.patchRoomParticipantCount, {
+          name: String(room.name),
+          numParticipants: room.numParticipants,
+        });
+      }
+
       if (eventType === "room_started" && room) {
         await ctx.runMutation(component_.lib.recordRoom, {
           name: String(room.name),

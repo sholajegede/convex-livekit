@@ -45,6 +45,40 @@ describe("rooms", () => {
     expect(room?.metadata).toBe(JSON.stringify({ topic: "Q3 all-hands" }));
     expect(room?.maxParticipants).toBe(500);
   });
+
+  test("patchRoomParticipantCount updates the count without touching status or metadata", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordRoom, {
+      name: "standup",
+      status: "started",
+      maxParticipants: 10,
+      metadata: JSON.stringify({ topic: "daily" }),
+    });
+
+    // Simulates a participant_joined event reporting the room's live count.
+    await t.mutation(api.lib.patchRoomParticipantCount, {
+      name: "standup",
+      numParticipants: 3,
+    });
+
+    const room = await t.query(api.lib.getRoom, { name: "standup" });
+    expect(room?.numParticipants).toBe(3);
+    expect(room?.status).toBe("started");
+    expect(room?.metadata).toBe(JSON.stringify({ topic: "daily" }));
+  });
+
+  test("patchRoomParticipantCount is a no-op for a room that isn't recorded yet", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.patchRoomParticipantCount, {
+      name: "ghost-room",
+      numParticipants: 2,
+    });
+
+    const room = await t.query(api.lib.getRoom, { name: "ghost-room" });
+    expect(room).toBeNull();
+  });
 });
 
 describe("participants", () => {
