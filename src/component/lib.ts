@@ -268,6 +268,70 @@ export const recordEgress = mutation({
   },
 });
 
+// ─── Dashboard queries ──────────────────────────────────────────────────────
+
+export const getStats = query({
+  args: {},
+  returns: v.object({
+    roomCount: v.number(),
+    liveRoomCount: v.number(),
+    participantCount: v.number(),
+    egressCount: v.number(),
+    webhookEventCount: v.number(),
+  }),
+  handler: async (ctx) => {
+    const [rooms, participants, egress, webhookEvents] = await Promise.all([
+      ctx.db.query("rooms").collect(),
+      ctx.db.query("participants").collect(),
+      ctx.db.query("egress").collect(),
+      ctx.db.query("webhookEvents").collect(),
+    ]);
+    return {
+      roomCount: rooms.length,
+      liveRoomCount: rooms.filter((r) => r.status === "started").length,
+      participantCount: participants.filter((p) => p.state === "joined").length,
+      egressCount: egress.length,
+      webhookEventCount: webhookEvents.length,
+    };
+  },
+});
+
+export const listRecentParticipants = query({
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(participantValidator),
+  handler: async (ctx, args) => {
+    const participants = await ctx.db.query("participants").collect();
+    return participants.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, args.limit ?? 20);
+  },
+});
+
+export const listRecentEgress = query({
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(egressValidator),
+  handler: async (ctx, args) => {
+    const egress = await ctx.db.query("egress").collect();
+    return egress.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, args.limit ?? 20);
+  },
+});
+
+export const listRecentWebhookEvents = query({
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(
+    v.object({
+      _id: v.id("webhookEvents"),
+      _creationTime: v.number(),
+      eventId: v.string(),
+      eventType: v.string(),
+      payload: v.string(),
+      receivedAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const events = await ctx.db.query("webhookEvents").collect();
+    return events.sort((a, b) => b.receivedAt - a.receivedAt).slice(0, args.limit ?? 20);
+  },
+});
+
 export const checkAndRecordEvent = mutation({
   args: {
     eventId: v.string(),

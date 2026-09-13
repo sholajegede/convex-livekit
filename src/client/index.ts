@@ -429,6 +429,22 @@ export class LiveKit {
   async listEgressByRoom(ctx: RunQueryCtx, args: { roomName: string; limit?: number }) {
     return await ctx.runQuery(this.component.lib.listEgressByRoom, args);
   }
+
+  async getStats(ctx: RunQueryCtx) {
+    return await ctx.runQuery(this.component.lib.getStats, {});
+  }
+
+  async listRecentParticipants(ctx: RunQueryCtx, args: { limit?: number } = {}) {
+    return await ctx.runQuery(this.component.lib.listRecentParticipants, args);
+  }
+
+  async listRecentEgress(ctx: RunQueryCtx, args: { limit?: number } = {}) {
+    return await ctx.runQuery(this.component.lib.listRecentEgress, args);
+  }
+
+  async listRecentWebhookEvents(ctx: RunQueryCtx, args: { limit?: number } = {}) {
+    return await ctx.runQuery(this.component.lib.listRecentWebhookEvents, args);
+  }
 }
 
 type RunQueryCtx = {

@@ -70,6 +70,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
+      getStats: FunctionReference<
+        "query",
+        "internal",
+        {},
+        {
+          egressCount: number;
+          liveRoomCount: number;
+          participantCount: number;
+          roomCount: number;
+          webhookEventCount: number;
+        },
+        Name
+      >;
       listEgressByRoom: FunctionReference<
         "query",
         "internal",
@@ -105,6 +118,58 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           roomName: string;
           state: "joined" | "left";
           updatedAt: number;
+        }>,
+        Name
+      >;
+      listRecentEgress: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          egressId: string;
+          endedAt?: number;
+          error?: string;
+          roomName?: string;
+          startedAt?: number;
+          status: string;
+          updatedAt: number;
+        }>,
+        Name
+      >;
+      listRecentParticipants: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          identity: string;
+          joinedAt?: number;
+          leftAt?: number;
+          metadata?: string;
+          name?: string;
+          participantSid: string;
+          roomName: string;
+          state: "joined" | "left";
+          updatedAt: number;
+        }>,
+        Name
+      >;
+      listRecentWebhookEvents: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          eventId: string;
+          eventType: string;
+          payload: string;
+          receivedAt: number;
         }>,
         Name
       >;

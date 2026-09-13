@@ -157,6 +157,97 @@ describe("egress", () => {
   });
 });
 
+describe("dashboard queries", () => {
+  test("getStats counts rooms, live rooms, joined participants, egress, and webhook events", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordRoom, { name: "r1", status: "started" });
+    await t.mutation(api.lib.recordRoom, { name: "r2", status: "started" });
+    await t.mutation(api.lib.markRoomFinished, { name: "r2" });
+
+    await t.mutation(api.lib.recordParticipant, {
+      participantSid: "PA_10",
+      roomName: "r1",
+      identity: "user_10",
+      state: "joined",
+    });
+    await t.mutation(api.lib.recordParticipant, {
+      participantSid: "PA_11",
+      roomName: "r1",
+      identity: "user_11",
+      state: "left",
+    });
+
+    await t.mutation(api.lib.recordEgress, { egressId: "EG_10", status: "EGRESS_ACTIVE" });
+    await t.mutation(api.lib.checkAndRecordEvent, {
+      eventId: "evt_10",
+      eventType: "room_started",
+      payload: "{}",
+    });
+
+    const stats = await t.query(api.lib.getStats, {});
+    expect(stats.roomCount).toBe(2);
+    expect(stats.liveRoomCount).toBe(1);
+    expect(stats.participantCount).toBe(1);
+    expect(stats.egressCount).toBe(1);
+    expect(stats.webhookEventCount).toBe(1);
+  });
+
+  test("listRecentParticipants returns participants most-recently-updated first", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordParticipant, {
+      participantSid: "PA_20",
+      roomName: "r1",
+      identity: "user_20",
+      state: "joined",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await t.mutation(api.lib.recordParticipant, {
+      participantSid: "PA_21",
+      roomName: "r1",
+      identity: "user_21",
+      state: "joined",
+    });
+
+    const recent = await t.query(api.lib.listRecentParticipants, {});
+    expect(recent[0].participantSid).toBe("PA_21");
+    expect(recent[1].participantSid).toBe("PA_20");
+  });
+
+  test("listRecentEgress returns egress jobs most-recently-updated first", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordEgress, { egressId: "EG_20", status: "EGRESS_STARTING" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await t.mutation(api.lib.recordEgress, { egressId: "EG_21", status: "EGRESS_STARTING" });
+
+    const recent = await t.query(api.lib.listRecentEgress, {});
+    expect(recent[0].egressId).toBe("EG_21");
+    expect(recent[1].egressId).toBe("EG_20");
+  });
+
+  test("listRecentWebhookEvents returns events most-recent first", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.checkAndRecordEvent, {
+      eventId: "evt_20",
+      eventType: "room_started",
+      payload: "{}",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await t.mutation(api.lib.checkAndRecordEvent, {
+      eventId: "evt_21",
+      eventType: "room_finished",
+      payload: "{}",
+    });
+
+    const recent = await t.query(api.lib.listRecentWebhookEvents, {});
+    expect(recent[0].eventId).toBe("evt_21");
+    expect(recent[1].eventId).toBe("evt_20");
+  });
+});
+
 describe("webhook idempotency", () => {
   test("checkAndRecordEvent flags duplicate event ids", async () => {
     const t = initConvexTest();

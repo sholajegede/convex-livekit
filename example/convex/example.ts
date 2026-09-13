@@ -37,6 +37,14 @@ export const removeParticipant = action({
   },
 });
 
+export const updateRoomMetadata = action({
+  args: { name: v.string(), metadata: v.string() },
+  handler: async (ctx, args) => {
+    await livekit.updateRoomMetadata(ctx, args);
+    return null;
+  },
+});
+
 export const createRoomToken = action({
   args: {
     roomName: v.string(),
@@ -66,5 +74,33 @@ export const listParticipantsByRoom = query({
   args: { roomName: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     return await livekit.listParticipantsByRoom(ctx, args);
+  },
+});
+
+export const getStats = query({
+  args: {},
+  handler: async (ctx) => {
+    return await livekit.getStats(ctx);
+  },
+});
+
+export const listRecentParticipants = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listRecentParticipants(ctx, args);
+  },
+});
+
+export const listRecentEgress = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listRecentEgress(ctx, args);
+  },
+});
+
+export const listRecentWebhookEvents = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listRecentWebhookEvents(ctx, args);
   },
 });
