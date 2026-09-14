@@ -1,7 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
-export type Tab = "rooms" | "join" | "webhooks" | "history";
+export type Tab = "rooms" | "join" | "ingress" | "webhooks" | "history";
 
 function FlowDiagram() {
   return (
@@ -41,6 +41,9 @@ export function Header({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) 
           egress jobs: <b>{stats ? stats.egressCount : "…"}</b>
         </span>
         <span>
+          ingress endpoints: <b>{stats ? stats.ingressCount : "…"}</b>
+        </span>
+        <span>
           webhook deliveries: <b>{stats ? stats.webhookEventCount : "…"}</b>
         </span>
       </div>
@@ -66,6 +69,7 @@ export function Header({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) 
           [
             ["rooms", "Rooms"],
             ["join", "Join Live"],
+            ["ingress", "Ingress"],
             ["webhooks", "Webhooks"],
             ["history", "History"],
           ] as const

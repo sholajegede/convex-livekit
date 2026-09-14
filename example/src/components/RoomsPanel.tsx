@@ -2,7 +2,13 @@ import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Card, Field, TextInput, Button, Badge, StatusDot, Empty } from "./ui";
-import { relativeTime, roomStatusTone, participantStateTone } from "../lib/format";
+import {
+  relativeTime,
+  roomStatusTone,
+  participantStateTone,
+  egressStatusTone,
+  isEgressLive,
+} from "../lib/format";
 import { withLog } from "../lib/logStore";
 
 function RoomItem({ name }: { name: string }) {
@@ -15,10 +21,18 @@ function RoomItem({ name }: { name: string }) {
     api.example.listParticipantsByRoom,
     expanded ? { roomName: name } : "skip",
   );
+  const egressJobs = useQuery(
+    api.example.listEgressByRoom,
+    expanded ? { roomName: name } : "skip",
+  );
 
   const deleteRoom = useAction(api.example.deleteRoom);
   const updateMetadata = useAction(api.example.updateRoomMetadata);
   const removeParticipant = useAction(api.example.removeParticipant);
+  const startEgress = useAction(api.example.startRoomCompositeEgress);
+  const stopEgress = useAction(api.example.stopEgress);
+
+  const liveEgress = egressJobs?.find((e) => isEgressLive(e.status));
 
   if (!room) return null;
 
@@ -71,6 +85,38 @@ function RoomItem({ name }: { name: string }) {
                 Save
               </Button>
             </div>
+          </div>
+
+          <div className="btn-row" style={{ marginTop: "0.75rem" }}>
+            {liveEgress ? (
+              <>
+                <Badge tone={egressStatusTone(liveEgress.status)}>
+                  recording: {liveEgress.status}
+                </Badge>
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    withLog("stopEgress", () => stopEgress({ egressId: liveEgress.egressId }))
+                  }
+                >
+                  Stop recording
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  withLog("startRoomCompositeEgress", () =>
+                    startEgress({
+                      roomName: room.name,
+                      filepath: `recordings/${room.name}-{time}.mp4`,
+                    }),
+                  )
+                }
+              >
+                Start recording
+              </Button>
+            )}
           </div>
 
           <div className="list-participants">

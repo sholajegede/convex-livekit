@@ -3,6 +3,7 @@ import { Header, type Tab } from "./components/Header";
 import { TopBanner } from "./components/TopBanner";
 import { RoomsPanel } from "./components/RoomsPanel";
 import { JoinPanel } from "./components/JoinPanel";
+import { IngressPanel } from "./components/IngressPanel";
 import { WebhooksPanel } from "./components/WebhooksPanel";
 import { History } from "./components/History";
 import { Console } from "./components/Console";
@@ -18,6 +19,7 @@ export default function App() {
         <TopBanner />
         {tab === "rooms" && <RoomsPanel />}
         {tab === "join" && <JoinPanel />}
+        {tab === "ingress" && <IngressPanel />}
         {tab === "webhooks" && <WebhooksPanel />}
         {tab === "history" && <History />}
       </div>

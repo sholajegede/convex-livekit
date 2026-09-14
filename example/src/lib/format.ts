@@ -48,3 +48,15 @@ export function egressStatusTone(status: string): Tone {
   }
   return "neutral";
 }
+
+export function ingressStateTone(state?: string): Tone {
+  if (state === "ENDPOINT_PUBLISHING") return "good";
+  if (state === "ENDPOINT_ERROR") return "bad";
+  if (state === "ENDPOINT_BUFFERING") return "pending";
+  return "neutral";
+}
+
+/** True if this egress is still running (not yet complete/failed/aborted). */
+export function isEgressLive(status: string): boolean {
+  return status === "EGRESS_STARTING" || status === "EGRESS_ACTIVE" || status === "EGRESS_ENDING";
+}
