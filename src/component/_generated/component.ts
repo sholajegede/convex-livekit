@@ -77,9 +77,33 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           egressCount: number;
           liveRoomCount: number;
+          liveTrackCount: number;
           participantCount: number;
           roomCount: number;
+          trackCount: number;
           webhookEventCount: number;
+        },
+        Name
+      >;
+      getTrack: FunctionReference<
+        "query",
+        "internal",
+        { trackSid: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          mimeType?: string;
+          muted: boolean;
+          name?: string;
+          participantIdentity: string;
+          publishedAt?: number;
+          roomName: string;
+          source: string;
+          trackSid: string;
+          type: string;
+          unpublishedAt?: number;
+          updatedAt: number;
         },
         Name
       >;
@@ -108,6 +132,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Array<{
           _creationTime: number;
           _id: string;
+          attributes?: Record<string, string>;
           createdAt: number;
           identity: string;
           joinedAt?: number;
@@ -146,6 +171,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Array<{
           _creationTime: number;
           _id: string;
+          attributes?: Record<string, string>;
           createdAt: number;
           identity: string;
           joinedAt?: number;
@@ -194,6 +220,50 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         }>,
         Name
       >;
+      listTracksByParticipant: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; participantIdentity: string; roomName: string },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          mimeType?: string;
+          muted: boolean;
+          name?: string;
+          participantIdentity: string;
+          publishedAt?: number;
+          roomName: string;
+          source: string;
+          trackSid: string;
+          type: string;
+          unpublishedAt?: number;
+          updatedAt: number;
+        }>,
+        Name
+      >;
+      listTracksByRoom: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; roomName: string },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          mimeType?: string;
+          muted: boolean;
+          name?: string;
+          participantIdentity: string;
+          publishedAt?: number;
+          roomName: string;
+          source: string;
+          trackSid: string;
+          type: string;
+          unpublishedAt?: number;
+          updatedAt: number;
+        }>,
+        Name
+      >;
       markParticipantLeftByIdentity: FunctionReference<
         "mutation",
         "internal",
@@ -208,6 +278,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         null,
         Name
       >;
+      markTrackUnpublished: FunctionReference<
+        "mutation",
+        "internal",
+        { trackSid: string },
+        null,
+        Name
+      >;
+      patchParticipant: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          attributes?: Record<string, string>;
+          identity: string;
+          metadata?: string;
+          name?: string;
+          roomName: string;
+        },
+        null,
+        Name
+      >;
       patchRoomMetadata: FunctionReference<
         "mutation",
         "internal",
@@ -219,6 +309,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         { name: string; numParticipants: number },
+        null,
+        Name
+      >;
+      patchTrackMuted: FunctionReference<
+        "mutation",
+        "internal",
+        { muted: boolean; trackSid: string },
         null,
         Name
       >;
@@ -240,6 +337,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         {
+          attributes?: Record<string, string>;
           identity: string;
           joinedAt?: number;
           leftAt?: number;
@@ -265,6 +363,23 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           sid?: string;
           startedAt?: number;
           status: "started" | "finished";
+        },
+        string,
+        Name
+      >;
+      recordTrack: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          mimeType?: string;
+          muted: boolean;
+          name?: string;
+          participantIdentity: string;
+          publishedAt?: number;
+          roomName: string;
+          source: string;
+          trackSid: string;
+          type: string;
         },
         string,
         Name

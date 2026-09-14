@@ -3,6 +3,7 @@ import { mutation, query } from "./_generated/server.js";
 
 const roomStatusValidator = v.union(v.literal("started"), v.literal("finished"));
 const participantStateValidator = v.union(v.literal("joined"), v.literal("left"));
+const attributesValidator = v.record(v.string(), v.string());
 
 const roomValidator = v.object({
   _id: v.id("rooms"),
@@ -29,6 +30,7 @@ const participantValidator = v.object({
   name: v.optional(v.string()),
   state: participantStateValidator,
   metadata: v.optional(v.string()),
+  attributes: v.optional(attributesValidator),
   joinedAt: v.optional(v.number()),
   leftAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -44,6 +46,23 @@ const egressValidator = v.object({
   error: v.optional(v.string()),
   startedAt: v.optional(v.number()),
   endedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+const trackValidator = v.object({
+  _id: v.id("tracks"),
+  _creationTime: v.number(),
+  trackSid: v.string(),
+  roomName: v.string(),
+  participantIdentity: v.string(),
+  type: v.string(),
+  source: v.string(),
+  name: v.optional(v.string()),
+  muted: v.boolean(),
+  mimeType: v.optional(v.string()),
+  publishedAt: v.optional(v.number()),
+  unpublishedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -102,6 +121,43 @@ export const listEgressByRoom = query({
     return await ctx.db
       .query("egress")
       .withIndex("by_roomName", (q) => q.eq("roomName", args.roomName))
+      .order("desc")
+      .take(args.limit ?? 50);
+  },
+});
+
+export const getTrack = query({
+  args: { trackSid: v.string() },
+  returns: v.union(v.null(), trackValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tracks")
+      .withIndex("by_trackSid", (q) => q.eq("trackSid", args.trackSid))
+      .first();
+  },
+});
+
+export const listTracksByRoom = query({
+  args: { roomName: v.string(), limit: v.optional(v.number()) },
+  returns: v.array(trackValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tracks")
+      .withIndex("by_roomName", (q) => q.eq("roomName", args.roomName))
+      .order("desc")
+      .take(args.limit ?? 50);
+  },
+});
+
+export const listTracksByParticipant = query({
+  args: { roomName: v.string(), participantIdentity: v.string(), limit: v.optional(v.number()) },
+  returns: v.array(trackValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tracks")
+      .withIndex("by_participant", (q) =>
+        q.eq("roomName", args.roomName).eq("participantIdentity", args.participantIdentity),
+      )
       .order("desc")
       .take(args.limit ?? 50);
   },
@@ -201,6 +257,7 @@ export const recordParticipant = mutation({
     name: v.optional(v.string()),
     state: participantStateValidator,
     metadata: v.optional(v.string()),
+    attributes: v.optional(attributesValidator),
     joinedAt: v.optional(v.number()),
     leftAt: v.optional(v.number()),
   },
@@ -242,6 +299,36 @@ export const markParticipantLeftByIdentity = mutation({
   },
 });
 
+// For updateParticipant: patches only the fields LiveKit's UpdateParticipant
+// API can change (metadata, name, attributes) without touching join/leave
+// state — unlike markParticipantLeftByIdentity, this never marks anyone left.
+export const patchParticipant = mutation({
+  args: {
+    roomName: v.string(),
+    identity: v.string(),
+    metadata: v.optional(v.string()),
+    name: v.optional(v.string()),
+    attributes: v.optional(attributesValidator),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("participants")
+      .withIndex("by_room_and_identity", (q) =>
+        q.eq("roomName", args.roomName).eq("identity", args.identity),
+      )
+      .order("desc")
+      .first();
+    if (!existing) return null;
+    const patch: Record<string, unknown> = { updatedAt: Date.now() };
+    if (args.metadata !== undefined) patch.metadata = args.metadata;
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.attributes !== undefined) patch.attributes = args.attributes;
+    await ctx.db.patch(existing._id, patch);
+    return null;
+  },
+});
+
 export const recordEgress = mutation({
   args: {
     egressId: v.string(),
@@ -268,6 +355,73 @@ export const recordEgress = mutation({
   },
 });
 
+export const recordTrack = mutation({
+  args: {
+    trackSid: v.string(),
+    roomName: v.string(),
+    participantIdentity: v.string(),
+    type: v.string(),
+    source: v.string(),
+    name: v.optional(v.string()),
+    muted: v.boolean(),
+    mimeType: v.optional(v.string()),
+    publishedAt: v.optional(v.number()),
+  },
+  returns: v.id("tracks"),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("tracks")
+      .withIndex("by_trackSid", (q) => q.eq("trackSid", args.trackSid))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...args,
+        unpublishedAt: undefined,
+        updatedAt: now,
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("tracks", { ...args, createdAt: now, updatedAt: now });
+  },
+});
+
+export const markTrackUnpublished = mutation({
+  args: { trackSid: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("tracks")
+      .withIndex("by_trackSid", (q) => q.eq("trackSid", args.trackSid))
+      .first();
+    if (!existing) return null;
+    await ctx.db.patch(existing._id, {
+      unpublishedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+// For mutePublishedTrack: patches the mute snapshot right after our own
+// server call succeeds. See the schema's caveat — this does not learn about
+// a participant muting themselves client-side.
+export const patchTrackMuted = mutation({
+  args: { trackSid: v.string(), muted: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("tracks")
+      .withIndex("by_trackSid", (q) => q.eq("trackSid", args.trackSid))
+      .first();
+    if (!existing) return null;
+    await ctx.db.patch(existing._id, { muted: args.muted, updatedAt: Date.now() });
+    return null;
+  },
+});
+
 // ─── Dashboard queries ──────────────────────────────────────────────────────
 
 export const getStats = query({
@@ -277,13 +431,16 @@ export const getStats = query({
     liveRoomCount: v.number(),
     participantCount: v.number(),
     egressCount: v.number(),
+    trackCount: v.number(),
+    liveTrackCount: v.number(),
     webhookEventCount: v.number(),
   }),
   handler: async (ctx) => {
-    const [rooms, participants, egress, webhookEvents] = await Promise.all([
+    const [rooms, participants, egress, tracks, webhookEvents] = await Promise.all([
       ctx.db.query("rooms").collect(),
       ctx.db.query("participants").collect(),
       ctx.db.query("egress").collect(),
+      ctx.db.query("tracks").collect(),
       ctx.db.query("webhookEvents").collect(),
     ]);
     return {
@@ -291,6 +448,8 @@ export const getStats = query({
       liveRoomCount: rooms.filter((r) => r.status === "started").length,
       participantCount: participants.filter((p) => p.state === "joined").length,
       egressCount: egress.length,
+      trackCount: tracks.length,
+      liveTrackCount: tracks.filter((t) => t.unpublishedAt === undefined).length,
       webhookEventCount: webhookEvents.length,
     };
   },
