@@ -716,19 +716,23 @@ immediately — retrying a real client error would only waste time.
 ## Example App
 
 `example/` is a small React app (`npm run dev`, then open `localhost:5173`) with
-four tabs, plus a sidebar Activity log that records every action call as it
+five tabs, plus a sidebar Activity log that records every action call as it
 happens:
 
 - **Rooms** — create a room (name, max participants, empty timeout, metadata),
   then expand any room to see its participants and their tracks live, mute a
-  track, remove a participant, update the room's metadata, or delete the room
-  outright.
+  track, remove a participant, update the room's metadata, delete the room
+  outright, or start/stop a room-composite recording with
+  `startRoomCompositeEgress`/`stopEgress`.
 - **Join Live** — mints a real join token with `createRoomToken` and opens an
   actual WebRTC connection with your camera and microphone, rendered with
   LiveKit's own
   [`@livekit/components-react`](https://www.npmjs.com/package/@livekit/components-react)
   `VideoConference` UI. This browser tab becomes a genuine participant — join it
   in two tabs to see both sides update reactively.
+- **Ingress** — provision an RTMP, WHIP, or pulled-URL endpoint with
+  `createIngress`, see its live state for a given room, and remove it with
+  `deleteIngress`.
 - **Webhooks** — every LiveKit webhook delivery this deployment has received,
   most recent first.
 - **History** — recent rooms, participants, tracks, and egress jobs across every
