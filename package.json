@@ -1,6 +1,6 @@
 {
   "name": "convex-livekit",
-  "description": "Sync LiveKit rooms, participants, and egress into Convex reactively, and manage rooms and mint access tokens from Convex functions.",
+  "description": "Sync LiveKit rooms, participants, tracks, egress, and ingress into Convex reactively, and manage them directly from Convex functions.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sholajegede/convex-livekit.git"
