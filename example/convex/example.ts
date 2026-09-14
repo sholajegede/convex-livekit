@@ -45,6 +45,33 @@ export const updateRoomMetadata = action({
   },
 });
 
+export const updateParticipant = action({
+  args: {
+    roomName: v.string(),
+    identity: v.string(),
+    metadata: v.optional(v.string()),
+    name: v.optional(v.string()),
+    attributes: v.optional(v.record(v.string(), v.string())),
+  },
+  handler: async (ctx, args) => {
+    await livekit.updateParticipant(ctx, args);
+    return null;
+  },
+});
+
+export const mutePublishedTrack = action({
+  args: {
+    roomName: v.string(),
+    identity: v.string(),
+    trackSid: v.string(),
+    muted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await livekit.mutePublishedTrack(ctx, args);
+    return null;
+  },
+});
+
 export const createRoomToken = action({
   args: {
     roomName: v.string(),
@@ -74,6 +101,27 @@ export const listParticipantsByRoom = query({
   args: { roomName: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     return await livekit.listParticipantsByRoom(ctx, args);
+  },
+});
+
+export const getTrack = query({
+  args: { trackSid: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.getTrack(ctx, args);
+  },
+});
+
+export const listTracksByRoom = query({
+  args: { roomName: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listTracksByRoom(ctx, args);
+  },
+});
+
+export const listTracksByParticipant = query({
+  args: { roomName: v.string(), participantIdentity: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listTracksByParticipant(ctx, args);
   },
 });
 
