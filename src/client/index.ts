@@ -27,6 +27,28 @@ export type CreateRoomTokenArgs = {
   ttlSeconds?: number;
 };
 
+export type UpdateParticipantArgs = {
+  roomName: string;
+  identity: string;
+  metadata?: string;
+  name?: string;
+  /** LiveKit Agents uses this map to broadcast agent state (e.g. "lk.agent.state"). */
+  attributes?: Record<string, string>;
+  permission?: {
+    canSubscribe?: boolean;
+    canPublish?: boolean;
+    canPublishData?: boolean;
+    hidden?: boolean;
+  };
+};
+
+export type MutePublishedTrackArgs = {
+  roomName: string;
+  identity: string;
+  trackSid: string;
+  muted: boolean;
+};
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
@@ -245,6 +267,7 @@ export class LiveKit {
 
       const room = event.room as Record<string, unknown> | undefined;
       const participant = event.participant as Record<string, unknown> | undefined;
+      const track = event.track as Record<string, unknown> | undefined;
       const egressInfo = event.egressInfo as Record<string, unknown> | undefined;
 
       // room_started/room_finished/participant_joined/participant_left all
@@ -279,9 +302,19 @@ export class LiveKit {
           name: (participant.name as string) ?? undefined,
           state: "joined",
           metadata: (participant.metadata as string) ?? undefined,
+          attributes: (participant.attributes as Record<string, string>) ?? undefined,
           joinedAt: Date.now(),
         });
-      } else if (eventType === "participant_left" && room && participant) {
+      } else if (
+        (eventType === "participant_left" || eventType === "participant_connection_aborted") &&
+        room &&
+        participant
+      ) {
+        // Both events mean the participant is gone — a clean leave vs. an
+        // unexpected connection drop. Treated identically here: without
+        // this, an aborted connection would leave the row stuck at
+        // state "joined" forever, since LiveKit never follows up with a
+        // separate participant_left for the same disconnect.
         await ctx.runMutation(component_.lib.recordParticipant, {
           participantSid: String(participant.sid),
           roomName: String(room.name),
@@ -290,6 +323,28 @@ export class LiveKit {
           state: "left",
           leftAt: Date.now(),
         });
+      } else if (
+        (eventType === "track_published" || eventType === "track_unpublished") &&
+        room &&
+        participant &&
+        track
+      ) {
+        const trackSid = String(track.sid);
+        if (eventType === "track_published") {
+          await ctx.runMutation(component_.lib.recordTrack, {
+            trackSid,
+            roomName: String(room.name),
+            participantIdentity: String(participant.identity),
+            type: String(track.type ?? "unknown").toLowerCase(),
+            source: String(track.source ?? "unknown").toLowerCase(),
+            name: (track.name as string) ?? undefined,
+            muted: Boolean(track.muted),
+            mimeType: (track.mimeType as string) ?? undefined,
+            publishedAt: Date.now(),
+          });
+        } else {
+          await ctx.runMutation(component_.lib.markTrackUnpublished, { trackSid });
+        }
       } else if (
         (eventType === "egress_started" ||
           eventType === "egress_updated" ||
@@ -305,9 +360,9 @@ export class LiveKit {
           endedAt: eventType === "egress_ended" ? Date.now() : undefined,
         });
       }
-      // track_published/track_unpublished and ingress_* events are accepted
-      // (recorded in webhookEvents for idempotency/auditing) but do not
-      // update any other table — see the README's Limitations section.
+      // ingress_* events are accepted (recorded in webhookEvents for
+      // idempotency/auditing) but do not update any other table — see the
+      // README's Limitations section.
 
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -393,6 +448,69 @@ export class LiveKit {
     await ctx.runMutation(this.component.lib.markParticipantLeftByIdentity, args);
   }
 
+  /**
+   * Updates a participant's permissions, metadata, display name, or
+   * attributes. `attributes` is the field LiveKit Agents uses to broadcast
+   * agent state (e.g. listening / thinking / speaking) — set it here to
+   * push agent state that a Convex-backed UI can read reactively.
+   */
+  async updateParticipant(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: UpdateParticipantArgs,
+  ): Promise<void> {
+    await twirpRequest(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "UpdateParticipant",
+      { roomAdmin: true, room: args.roomName },
+      {
+        room: args.roomName,
+        identity: args.identity,
+        metadata: args.metadata,
+        name: args.name,
+        attributes: args.attributes,
+        permission: args.permission,
+      },
+    );
+    await ctx.runMutation(this.component.lib.patchParticipant, {
+      roomName: args.roomName,
+      identity: args.identity,
+      metadata: args.metadata,
+      name: args.name,
+      attributes: args.attributes,
+    });
+  }
+
+  /**
+   * Mutes or unmutes a participant's published track. Only reflects mute
+   * changes this component itself makes — LiveKit has no webhook for a
+   * participant muting themselves client-side, so that case won't be
+   * reflected in Convex until the track is next published/unpublished.
+   */
+  async mutePublishedTrack(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: MutePublishedTrackArgs,
+  ): Promise<void> {
+    await twirpRequest(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "MutePublishedTrack",
+      { roomAdmin: true, room: args.roomName },
+      {
+        room: args.roomName,
+        identity: args.identity,
+        track_sid: args.trackSid,
+        muted: args.muted,
+      },
+    );
+    await ctx.runMutation(this.component.lib.patchTrackMuted, {
+      trackSid: args.trackSid,
+      muted: args.muted,
+    });
+  }
+
   /** Mints a room-join access token for a client to connect with. Touches no database. */
   async createRoomToken(args: CreateRoomTokenArgs): Promise<{ token: string }> {
     const token = await signLiveKitToken(
@@ -428,6 +546,21 @@ export class LiveKit {
 
   async listEgressByRoom(ctx: RunQueryCtx, args: { roomName: string; limit?: number }) {
     return await ctx.runQuery(this.component.lib.listEgressByRoom, args);
+  }
+
+  async getTrack(ctx: RunQueryCtx, args: { trackSid: string }) {
+    return await ctx.runQuery(this.component.lib.getTrack, args);
+  }
+
+  async listTracksByRoom(ctx: RunQueryCtx, args: { roomName: string; limit?: number }) {
+    return await ctx.runQuery(this.component.lib.listTracksByRoom, args);
+  }
+
+  async listTracksByParticipant(
+    ctx: RunQueryCtx,
+    args: { roomName: string; participantIdentity: string; limit?: number },
+  ) {
+    return await ctx.runQuery(this.component.lib.listTracksByParticipant, args);
   }
 
   async getStats(ctx: RunQueryCtx) {
