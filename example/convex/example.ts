@@ -162,6 +162,20 @@ export const listParticipantsByRoom = query({
   },
 });
 
+export const getEgress = query({
+  args: { egressId: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.getEgress(ctx, args);
+  },
+});
+
+export const listEgressByRoom = query({
+  args: { roomName: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listEgressByRoom(ctx, args);
+  },
+});
+
 export const getTrack = query({
   args: { trackSid: v.string() },
   handler: async (ctx, args) => {
