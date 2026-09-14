@@ -184,6 +184,28 @@ function backoffDelayMs(attempt: number): number {
 }
 
 /**
+ * LiveKit's Twirp API responses and webhook payloads serialize protobuf
+ * messages using their original snake_case field names (protojson with
+ * original proto names), not the lowerCamelCase every type in this file
+ * assumes — confirmed by inspecting a live StartRoomCompositeEgress
+ * response, which comes back as `{ egress_id, room_name, started_at, ... }`.
+ * Deliberately shallow (only the object's own keys, never recursing into a
+ * field's value) so it never mangles a value that's itself a map with
+ * caller-defined keys, such as ParticipantInfo.attributes.
+ */
+function snakeToCamelShallow<T>(value: unknown): T {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return value as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    const camelKey = key.replace(/_([a-z0-9])/g, (_match, c: string) => c.toUpperCase());
+    out[camelKey] = val;
+  }
+  return out as T;
+}
+
+/**
  * Calls a LiveKit Twirp RPC (RoomService, Egress, or Ingress). Retries on
  * 429 and 5xx responses and on network-level failures (DNS, connection
  * reset), honoring `Retry-After` when LiveKit sends one; anything else
@@ -216,7 +238,7 @@ async function twirpRequest<T>(
     }
 
     if (res.ok) {
-      return (await res.json()) as T;
+      return snakeToCamelShallow<T>(await res.json());
     }
 
     if (isLastAttempt || !isRetryableStatus(res.status)) {
@@ -356,7 +378,11 @@ export class LiveKit {
         });
       }
 
-      const event = JSON.parse(rawBody) as Record<string, unknown>;
+      // Same snake_case-vs-camelCase mismatch as twirp responses (see
+      // snakeToCamelShallow above) — LiveKit's webhook body is protojson
+      // too, so `egress_info`/`ingress_info`/`num_participants` etc. would
+      // otherwise silently fail every `event.egressInfo`-style read below.
+      const event = snakeToCamelShallow<Record<string, unknown>>(JSON.parse(rawBody));
       const eventId = event.id ? String(event.id) : undefined;
       const eventType = (event.event as string) ?? "unknown";
 
@@ -380,11 +406,14 @@ export class LiveKit {
         });
       }
 
-      const room = event.room as Record<string, unknown> | undefined;
-      const participant = event.participant as Record<string, unknown> | undefined;
-      const track = event.track as Record<string, unknown> | undefined;
-      const egressInfo = event.egressInfo as Record<string, unknown> | undefined;
-      const ingressInfo = event.ingressInfo as Record<string, unknown> | undefined;
+      // `event` was only normalized one level deep, so each nested
+      // LiveKit message (Room, ParticipantInfo, TrackInfo, EgressInfo,
+      // IngressInfo) needs its own pass before its own fields are read.
+      const room = snakeToCamelShallow<Record<string, unknown>>(event.room);
+      const participant = snakeToCamelShallow<Record<string, unknown>>(event.participant);
+      const track = snakeToCamelShallow<Record<string, unknown>>(event.track);
+      const egressInfo = snakeToCamelShallow<Record<string, unknown>>(event.egressInfo);
+      const ingressInfo = snakeToCamelShallow<Record<string, unknown>>(event.ingressInfo);
 
       // room_started/room_finished/participant_joined/participant_left all
       // embed the same live Room object — sync numParticipants off whichever
@@ -482,7 +511,7 @@ export class LiveKit {
         // ingressInfo is the full current IngressInfo either way (LiveKit
         // doesn't send a partial diff), so this is a plain upsert — same
         // shape as createIngress/updateIngress below.
-        const state = ingressInfo.state as Record<string, unknown> | undefined;
+        const state = snakeToCamelShallow<Record<string, unknown>>(ingressInfo.state);
         await ctx.runMutation(component_.lib.recordIngress, {
           ingressId: String(ingressInfo.ingressId),
           name: (ingressInfo.name as string) ?? undefined,

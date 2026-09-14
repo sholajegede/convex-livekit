@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.6
+
+### Patch Changes
+
+- Fix every Twirp API response and webhook payload being read as if LiveKit's server returned camelCase JSON (`egressId`, `roomName`, `numParticipants`). It actually returns the original protobuf field names — snake_case (`egress_id`, `room_name`, `num_participants`) — confirmed against a live `StartRoomCompositeEgress` response. This broke two ways: a required field like `EgressInfo.egress_id` came back `undefined` and `startRoomCompositeEgress`/`createIngress`/`stopEgress`/`updateIngress` threw `ArgumentValidationError` on every call, while an optional field like `Room.num_participants` or `Room.max_participants` was silently dropped instead of erroring. The `egress_started`/`egress_ended`/`ingress_started`/`ingress_ended` webhook branches were affected worst of all: LiveKit sends `event.egress_info`/`event.ingress_info`, not `event.egressInfo`/`event.ingressInfo`, so those branches' `&& egressInfo`/`&& ingressInfo` guards were always false and silently never ran. Every Twirp response and webhook payload is now normalized from snake_case to camelCase (shallow — one level of keys at a time, so it never touches the caller-defined keys inside a map like `ParticipantInfo.attributes`) before any field on it is read.
+
 ## 0.0.5
 
 ### Patch Changes

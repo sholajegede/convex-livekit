@@ -248,6 +248,74 @@ describe("ingress lifecycle", () => {
   });
 });
 
+describe("real LiveKit payload shape (snake_case)", () => {
+  // The tests above all use camelCase fixtures, which happens to match
+  // what the handler expected before the snake_case/camelCase fix — so
+  // they'd have passed even with the bug. These mirror LiveKit's actual
+  // wire format (confirmed against a live Egress response) and would have
+  // failed against the old code, since `event.egressInfo`/`event.ingressInfo`
+  // are undefined when the real top-level keys are `egress_info`/`ingress_info`.
+  test("egress_started (egress_info, snake_case) records the egress row", async () => {
+    const t = initConvexTest();
+    await postWebhook(
+      t,
+      event({
+        id: "evt_egress_start",
+        event: "egress_started",
+        egress_info: {
+          egress_id: "EG_1",
+          room_name: "standup",
+          status: "EGRESS_STARTING",
+        },
+      }),
+    );
+
+    const egress = await t.query(api.example.getEgress, { egressId: "EG_1" });
+    expect(egress?.status).toBe("EGRESS_STARTING");
+    expect(egress?.roomName).toBe("standup");
+  });
+
+  test("ingress_started (ingress_info, snake_case) records the ingress row", async () => {
+    const t = initConvexTest();
+    await postWebhook(
+      t,
+      event({
+        id: "evt_ingress_start_snake",
+        event: "ingress_started",
+        ingress_info: {
+          ingress_id: "IN_2",
+          room_name: "standup",
+          participant_identity: "rtmp-encoder",
+          input_type: "RTMP_INPUT",
+          stream_key: "sk_live_2",
+          state: { status: "ENDPOINT_BUFFERING" },
+        },
+      }),
+    );
+
+    const ingress = await t.query(api.example.listIngressByRoom, { roomName: "standup" });
+    expect(ingress).toHaveLength(1);
+    expect(ingress[0].participantIdentity).toBe("rtmp-encoder");
+    expect(ingress[0].streamKey).toBe("sk_live_2");
+    expect(ingress[0].state).toBe("ENDPOINT_BUFFERING");
+  });
+
+  test("room_started with num_participants (snake_case) syncs the live count", async () => {
+    const t = initConvexTest();
+    await postWebhook(
+      t,
+      event({
+        id: "evt_room_snake",
+        room: { name: "town-hall", sid: "RM_2", num_participants: 3, max_participants: 100 },
+      }),
+    );
+
+    const room = await t.query(api.example.getRoom, { name: "town-hall" });
+    expect(room?.numParticipants).toBe(3);
+    expect(room?.maxParticipants).toBe(100);
+  });
+});
+
 describe("track lifecycle", () => {
   test("track_published syncs a track, track_unpublished marks it unpublished", async () => {
     const t = initConvexTest();
