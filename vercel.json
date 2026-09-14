@@ -1,0 +1,4 @@
+{
+  "buildCommand": "cd example && npm run build",
+  "outputDirectory": "example/dist"
+}
