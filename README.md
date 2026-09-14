@@ -1,8 +1,8 @@
 # convex-livekit
 
-Sync LiveKit rooms, participants, and egress into your Convex database
-reactively, and manage rooms and mint access tokens directly from Convex
-functions.
+Sync LiveKit rooms, participants, tracks, and egress into your Convex
+database reactively, and manage rooms, participants, and tracks directly
+from Convex functions.
 
 [![npm version](https://img.shields.io/npm/v/convex-livekit.svg)](https://www.npmjs.com/package/convex-livekit)
 [![Convex Component](https://www.convex.dev/components/badge/sholajegede/convex-livekit)](https://www.convex.dev/components/sholajegede/convex-livekit)
@@ -24,8 +24,8 @@ const { token } = await livekit.createRoomToken({
   identity: "user_123",
 });
 
-// Stays live from here — status, participants, and egress all update
-// reactively as LiveKit's webhooks arrive.
+// Stays live from here — status, participants, tracks, and egress all
+// update reactively as LiveKit's webhooks arrive.
 const room = useQuery(api.example.getRoom, { name });
 ```
 
@@ -33,28 +33,35 @@ const room = useQuery(api.example.getRoom, { name });
 
 ## What this does
 
-`convex-livekit` gives your Convex app a live, queryable view of LiveKit rooms
-and the people in them, kept up to date by LiveKit's webhooks, plus a small set
-of actions for managing rooms and authenticating clients:
+`convex-livekit` gives your Convex app a live, queryable view of LiveKit rooms,
+the people in them, and their published tracks — kept up to date by LiveKit's
+webhooks — plus a set of actions for managing rooms, participants, and
+authenticating clients:
 
-- **Reactive room & participant tracking** — `room_started`/`room_finished` and
-  `participant_joined`/`participant_left` webhook events update Convex rows, so
-  `useQuery` in your React app re-renders as rooms open and people join or
-  leave.
+- **Reactive room & participant tracking** — `room_started`/`room_finished`,
+  `participant_joined`/`participant_left`, and `participant_connection_aborted`
+  (an unexpected disconnect, handled the same as a clean leave) update Convex
+  rows, so `useQuery` in your React app re-renders as rooms open and people
+  join or leave.
+- **Track tracking** — `track_published`/`track_unpublished` sync each
+  participant's tracks (source: camera, microphone, screen share; muted
+  snapshot; type), so you can tell not just who's in a room but whether their
+  mic or camera is actually live.
 - **Egress tracking** — `egress_started`/`egress_updated`/`egress_ended` events
   are recorded too, so you can show recording/streaming status live.
-- **Room management and tokens from your backend** — call `createRoom`,
-  `deleteRoom`, `updateRoomMetadata`, and `removeParticipant` from Convex
-  actions, and mint room-join access tokens with `createRoomToken` for your
-  clients to connect with.
+- **Room, participant, and track management from your backend** — call
+  `createRoom`, `deleteRoom`, `updateRoomMetadata`, `removeParticipant`,
+  `updateParticipant`, and `mutePublishedTrack` from Convex actions, and mint
+  room-join access tokens with `createRoomToken` for your clients to connect
+  with.
 - **Cryptographically verified webhooks** — every inbound webhook's signed JWT
   is verified (signature, issuer, expiry, and a body-hash check) before anything
   is written, matching LiveKit's own webhook verification scheme.
 
 This is a [Convex component](https://convex.dev/components): its `rooms`,
-`participants`, `egress`, and `webhookEvents` tables live in an isolated schema,
-not your app's schema, and are only reachable through the functions this
-component exposes.
+`participants`, `tracks`, `egress`, and `webhookEvents` tables live in an
+isolated schema, not your app's schema, and are only reachable through the
+functions this component exposes.
 
 ## Table of Contents
 
@@ -73,7 +80,9 @@ component exposes.
     - [Create a room](#create-a-room)
     - [Mint a join token for a client](#mint-a-join-token-for-a-client)
     - [Remove a participant](#remove-a-participant)
-    - [Read rooms and participants reactively](#read-rooms-and-participants-reactively)
+    - [Update a participant, or mute their track](#update-a-participant-or-mute-their-track)
+    - [Read rooms, participants, and tracks reactively](#read-rooms-participants-and-tracks-reactively)
+  - [Agent state](#agent-state)
   - [API Reference](#api-reference)
     - [Actions (need `ctx` from an action)](#actions-need-ctx-from-an-action)
     - [Plain methods (no `ctx` — touch no database)](#plain-methods-no-ctx--touch-no-database)
@@ -182,9 +191,9 @@ export const listRooms = query({
 ## Setup
 
 The component needs no schema changes in your app — its tables (`rooms`,
-`participants`, `egress`, `webhookEvents`) live entirely inside the component's
-own isolated schema. All you need is the webhook mounted (step 3) and a
-`LiveKit` client instance wherever you call its methods.
+`participants`, `tracks`, `egress`, `webhookEvents`) live entirely inside the
+component's own isolated schema. All you need is the webhook mounted (step 3)
+and a `LiveKit` client instance wherever you call its methods.
 
 Unlike the other components in this series, `convex-livekit` never stores a
 long-lived credential in a header — every server API call and every room-join
@@ -235,55 +244,103 @@ export const kick = action({
 });
 ```
 
-### Read rooms and participants reactively
+### Update a participant, or mute their track
+
+```ts
+export const setAgentState = action({
+  args: { roomName: v.string(), identity: v.string(), state: v.string() },
+  handler: async (ctx, args) => {
+    await livekit.updateParticipant(ctx, {
+      roomName: args.roomName,
+      identity: args.identity,
+      attributes: { "lk.agent.state": args.state },
+    });
+    return null;
+  },
+});
+
+export const muteMic = action({
+  args: { roomName: v.string(), identity: v.string(), trackSid: v.string() },
+  handler: async (ctx, args) => {
+    await livekit.mutePublishedTrack(ctx, { ...args, muted: true });
+    return null;
+  },
+});
+```
+
+Both call LiveKit's server API first, then patch the corresponding Convex row
+so the change is visible in queries immediately — no round trip through a
+webhook required.
+
+### Read rooms, participants, and tracks reactively
 
 ```tsx
 const rooms = useQuery(api.example.listRooms, {});
 const participants = useQuery(api.example.listParticipantsByRoom, {
   roomName: "standup",
 });
+const tracks = useQuery(api.example.listTracksByRoom, { roomName: "standup" });
 ```
 
-Every `room_started`/`room_finished` and `participant_joined`/`participant_left`
-webhook event patches or inserts a row, so these queries re-render live — no
-polling.
+Every `room_started`/`room_finished`,
+`participant_joined`/`participant_left`/`participant_connection_aborted`, and
+`track_published`/`track_unpublished` webhook event patches or inserts a row,
+so these queries re-render live — no polling.
+
+## Agent state
+
+LiveKit Agents broadcasts what an agent is doing — listening, thinking,
+speaking — through the participant's `attributes` map (conventionally under an
+`lk.agent.state` key). `convex-livekit` reads that same field: it's synced into
+`participants.attributes` on `participant_joined`/`left`/`connection_aborted`,
+and you can also set it yourself with `updateParticipant`. That means a
+Convex-backed UI can show live agent state with a plain `useQuery`, and your
+backend can both read and drive it — for example, muting a user's microphone
+track with `mutePublishedTrack` while an agent is mid-response, then unmuting
+it for the user's turn. See the [Limitations](#limitations) section for what
+this can and can't stay in sync with.
 
 ## API Reference
 
 ### Actions (need `ctx` from an action)
 
-| Method                                                                  | Description                                                                |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `createRoom(ctx, { name, emptyTimeout?, maxParticipants?, metadata? })` | Creates a room via the server API and records it. Returns `{ sid, name }`. |
-| `deleteRoom(ctx, { name })`                                             | Deletes a room via the server API and marks it finished.                   |
-| `updateRoomMetadata(ctx, { name, metadata })`                           | Updates a room's metadata via the server API and patches the stored row.   |
-| `removeParticipant(ctx, { roomName, identity })`                        | Disconnects a participant via the server API and marks them left.          |
+| Method                                                                                              | Description                                                                |
+| ----------------------------------------------------------------------------------------------------| --------------------------------------------------------------------------|
+| `createRoom(ctx, { name, emptyTimeout?, maxParticipants?, metadata? })`                              | Creates a room via the server API and records it. Returns `{ sid, name }`. |
+| `deleteRoom(ctx, { name })`                                                                          | Deletes a room via the server API and marks it finished.                  |
+| `updateRoomMetadata(ctx, { name, metadata })`                                                        | Updates a room's metadata via the server API and patches the stored row.  |
+| `removeParticipant(ctx, { roomName, identity })`                                                     | Disconnects a participant via the server API and marks them left.         |
+| `updateParticipant(ctx, { roomName, identity, metadata?, name?, attributes?, permission? })`         | Updates a participant's metadata, name, attributes, or permissions via the server API and patches the stored row. |
+| `mutePublishedTrack(ctx, { roomName, identity, trackSid, muted })`                                   | Mutes or unmutes a participant's track via the server API and patches the stored row. |
 
 ### Plain methods (no `ctx` — touch no database)
 
 | Method                                                                                                                | Description                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------|
 | `createRoomToken({ roomName, identity, name?, canPublish?, canSubscribe?, canPublishData?, metadata?, ttlSeconds? })` | Signs and returns a room-join access token. Defaults to a 10-minute expiry and publish+subscribe permissions. |
 
 ### Queries (work from actions, queries, or mutations)
 
-| Method                                              | Description                                                                                                    |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `getRoom(ctx, { name })`                            | Fetch one room by its name.                                                                                    |
-| `listRooms(ctx, { limit? })`                        | Most recently updated rooms, newest first.                                                                     |
-| `listParticipantsByRoom(ctx, { roomName, limit? })` | Most recently updated participants for a room, newest first.                                                   |
-| `getEgress(ctx, { egressId })`                      | Fetch one egress job by its id.                                                                                |
-| `listEgressByRoom(ctx, { roomName, limit? })`       | Most recently updated egress jobs for a room, newest first.                                                    |
-| `getStats(ctx)`                                     | Counts: total rooms, currently-live rooms, currently-joined participants, egress jobs, and webhook deliveries. |
-| `listRecentParticipants(ctx, { limit? })`           | Most recently updated participants across every room, newest first.                                            |
-| `listRecentEgress(ctx, { limit? })`                 | Most recently updated egress jobs across every room, newest first.                                             |
-| `listRecentWebhookEvents(ctx, { limit? })`          | Most recently received webhook deliveries, newest first.                                                       |
+| Method                                                                | Description                                                                                                                       |
+| ---------------------------------------------------------------------| ------------------------------------------------------------------------------------------------------------------------------------|
+| `getRoom(ctx, { name })`                                              | Fetch one room by its name.                                                                                                       |
+| `listRooms(ctx, { limit? })`                                          | Most recently updated rooms, newest first.                                                                                        |
+| `listParticipantsByRoom(ctx, { roomName, limit? })`                   | Most recently updated participants for a room, newest first.                                                                      |
+| `getEgress(ctx, { egressId })`                                        | Fetch one egress job by its id.                                                                                                   |
+| `listEgressByRoom(ctx, { roomName, limit? })`                         | Most recently updated egress jobs for a room, newest first.                                                                       |
+| `getTrack(ctx, { trackSid })`                                         | Fetch one track by its LiveKit track sid.                                                                                         |
+| `listTracksByRoom(ctx, { roomName, limit? })`                         | Most recently updated tracks for a room, newest first.                                                                            |
+| `listTracksByParticipant(ctx, { roomName, participantIdentity, limit? })` | Most recently updated tracks for one participant in a room, newest first.                                                     |
+| `getStats(ctx)`                                                       | Counts: total rooms, currently-live rooms, currently-joined participants, egress jobs, total/currently-published tracks, and webhook deliveries. |
+| `listRecentParticipants(ctx, { limit? })`                             | Most recently updated participants across every room, newest first.                                                               |
+| `listRecentEgress(ctx, { limit? })`                                   | Most recently updated egress jobs across every room, newest first.                                                                |
+| `listRecentWebhookEvents(ctx, { limit? })`                            | Most recently received webhook deliveries, newest first.                                                                          |
 
 ### Webhook
 
 | Property         | Description                                                                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `webhookHandler` | An `httpAction` that verifies, deduplicates, and processes LiveKit's room, participant, and egress webhook events. Mount it at any route. |
+| `webhookHandler` | An `httpAction` that verifies, deduplicates, and processes LiveKit's room, participant, track, and egress webhook events. Mount it at any route. |
 
 ## Type Reference
 
@@ -312,6 +369,27 @@ type CreateRoomTokenArgs = {
   ttlSeconds?: number; // default 600 (10 minutes)
 };
 
+type UpdateParticipantArgs = {
+  roomName: string;
+  identity: string;
+  metadata?: string;
+  name?: string;
+  attributes?: Record<string, string>; // LiveKit Agents uses this for agent state
+  permission?: {
+    canSubscribe?: boolean;
+    canPublish?: boolean;
+    canPublishData?: boolean;
+    hidden?: boolean;
+  };
+};
+
+type MutePublishedTrackArgs = {
+  roomName: string;
+  identity: string;
+  trackSid: string;
+  muted: boolean;
+};
+
 type Room = {
   name: string;
   sid?: string;
@@ -333,8 +411,24 @@ type Participant = {
   name?: string;
   state: "joined" | "left";
   metadata?: string;
+  attributes?: Record<string, string>;
   joinedAt?: number;
   leftAt?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type Track = {
+  trackSid: string;
+  roomName: string;
+  participantIdentity: string;
+  type: string; // "audio" | "video" | "data"
+  source: string; // "unknown" | "camera" | "microphone" | "screen_share" | "screen_share_audio"
+  name?: string;
+  muted: boolean;
+  mimeType?: string;
+  publishedAt?: number;
+  unpublishedAt?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -353,13 +447,18 @@ type Egress = {
 
 ## Webhook Events
 
-The webhook handler processes five of LiveKit's webhook event types (others are
-recorded for idempotency but otherwise ignored — see Limitations):
+The webhook handler processes eight of LiveKit's webhook event types (`ingress_*`
+is accepted for idempotency but otherwise ignored — see Limitations):
 
 - **`room_started`** / **`room_finished`** — upsert or finalize the room's row.
-- **`participant_joined`** / **`participant_left`** — upsert the participant's
-  row, keyed by their `sid` (LiveKit's per-session participant id, distinct from
-  `identity`).
+- **`participant_joined`** — upserts the participant's row (keyed by their
+  `sid`, LiveKit's per-session participant id, distinct from `identity`),
+  including their `attributes` map.
+- **`participant_left`** / **`participant_connection_aborted`** — both mean the
+  participant is gone (a clean leave vs. an unexpected disconnect) and are
+  handled identically, marking the row `left`.
+- **`track_published`** / **`track_unpublished`** — upsert or mark unpublished
+  the track's row, keyed by its `sid`.
 - **`egress_started`** / **`egress_updated`** / **`egress_ended`** — upsert the
   egress job's row.
 
@@ -397,8 +496,24 @@ participants: {
   name?: string;
   state: "joined" | "left";
   metadata?: string;
+  attributes?: Record<string, string>;
   joinedAt?: number;
   leftAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+tracks: {
+  trackSid: string;             // indexed: by_trackSid
+  roomName: string;             // indexed: by_roomName, and by_participant with participantIdentity
+  participantIdentity: string;
+  type: string;                 // "audio" | "video" | "data"
+  source: string;                // "unknown" | "camera" | "microphone" | "screen_share" | "screen_share_audio"
+  name?: string;
+  muted: boolean;
+  mimeType?: string;
+  publishedAt?: number;
+  unpublishedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -440,7 +555,10 @@ tracking a new opaque id every time it reopens.
 Participants, by contrast, are keyed by `participantSid` — a participant's own
 per-session id — since the same `identity` (e.g. a user id) can legitimately
 hold multiple simultaneous or sequential sessions across reconnects, and you
-generally want each to show up as its own row.
+generally want each to show up as its own row. Tracks are keyed by their own
+`trackSid`, which is unique per publish — republishing the same logical camera
+or microphone gets a new row, and the old one stays as history with
+`unpublishedAt` set.
 
 ## Authentication
 
@@ -462,8 +580,9 @@ four tabs, plus a sidebar Activity log that records every action call as it
 happens:
 
 - **Rooms** — create a room (name, max participants, empty timeout, metadata),
-  then expand any room to see its participants live, remove one, update the
-  room's metadata, or delete the room outright.
+  then expand any room to see its participants and their tracks live, mute a
+  track, remove a participant, update the room's metadata, or delete the room
+  outright.
 - **Join Live** — mints a real join token with `createRoomToken` and opens an
   actual WebRTC connection with your camera and microphone, rendered with
   LiveKit's own
@@ -472,8 +591,8 @@ happens:
   in two tabs to see both sides update reactively.
 - **Webhooks** — every LiveKit webhook delivery this deployment has received,
   most recent first.
-- **History** — recent rooms, participants, and egress jobs across every room,
-  not just the one you're currently looking at.
+- **History** — recent rooms, participants, tracks, and egress jobs across every
+  room, not just the one you're currently looking at.
 
 To run it: set `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`/`LIVEKIT_HOST` as Convex
 environment variables (see [Setup](#setup)), add
@@ -488,29 +607,41 @@ npm run test
 npm run typecheck
 ```
 
-Tests use [`convex-test`](https://www.npmjs.com/package/convex-test) and cover
-room lifecycle transitions (confirming `markRoomFinished` and
+Tests use [`convex-test`](https://www.npmjs.com/package/convex-test) at two
+levels. `src/component/lib.test.ts` covers the component's mutations and
+queries directly: room lifecycle transitions (confirming `markRoomFinished` and
 `patchRoomMetadata` only touch their own fields), participant join/leave
-tracking (confirming `joinedAt` survives a later `leftAt` patch), the room
-participant-count sync staying current across
-`room_started`/`participant_joined`/`participant_left` without disturbing status
-or metadata, egress upsert behavior, webhook idempotency via
-`checkAndRecordEvent`, and the dashboard queries (`getStats`,
-`listRecentParticipants`, `listRecentEgress`, `listRecentWebhookEvents`).
+tracking and attributes, track publish/unpublish/mute, the room
+participant-count sync staying current without disturbing status or metadata,
+egress upsert behavior, webhook idempotency via `checkAndRecordEvent`, and the
+dashboard queries. `example/convex/http.test.ts` separately exercises the
+actual `httpAction` end to end — signing requests with an independent HS256
+implementation (not the component's own) to verify the handler rejects a
+missing auth header, a wrong secret, a wrong issuer, an expired token, and a
+tampered body, and correctly dispatches `participant_connection_aborted` and
+the track events.
 
 ## Limitations
 
-- Only `room_started`/`room_finished`, `participant_joined`/`participant_left`,
-  and the three `egress_*` events update tables;
-  `track_published`/`track_unpublished` and `ingress_*` events are accepted (and
-  recorded in `webhookEvents` for auditing) but not otherwise persisted.
-- Track-level state (which tracks a participant has published, mute state,
-  resolution) is not tracked — this component covers room and participant
-  lifecycle, not media-level detail.
-- SIP and Ingress resource management (bringing external RTMP/WHIP/SIP streams
-  into a room) is out of scope; only the core `RoomService` methods needed for
-  the common case (create, delete, update metadata, remove participant) are
-  wrapped.
+- `ingress_*` events are accepted (and recorded in `webhookEvents` for
+  auditing) but not otherwise persisted — Ingress resource management
+  (bringing external RTMP/WHIP streams into a room) is a distinct feature area
+  from the server-side control plane this component covers.
+- Track `muted` and participant `attributes` are snapshots, not continuously
+  reactive: LiveKit has no webhook for a live mute toggle or an attributes
+  change, so these fields are only refreshed at `track_published` /
+  join-leave-abort time, and whenever this component's own
+  `mutePublishedTrack` / `updateParticipant` calls succeed. A participant
+  muting themselves client-side, or an agent changing its own attributes
+  without going through `updateParticipant`, won't be reflected until the next
+  event that does carry it.
+- SIP is out of scope entirely — it's a different product surface
+  (telephony), not an extension of the server-side control plane this
+  component wraps.
+- Only the `RoomService` methods needed for the common case (create, delete,
+  update metadata, remove/update participant, mute a track) are wrapped;
+  multi-room operations (`moveParticipant`, `forwardParticipant`) and
+  messaging (`sendData`) are not.
 - Rate limits are your LiveKit project's own — this component does not implement
   its own rate limiting or backoff.
 
@@ -530,9 +661,10 @@ body must reach your `httpAction` untouched.
 **`createRoom` throws a 401/403** — the signed server-API token's `video` grant
 didn't include the permission the call needs (`roomCreate` for
 `CreateRoom`/`DeleteRoom`, `roomAdmin` for
-`UpdateRoomMetadata`/`RemoveParticipant`); this is handled internally
-per-method, so a 401/403 here more often means the `apiKey`/`apiSecret` pair
-itself doesn't have access to the project at `LIVEKIT_HOST`.
+`UpdateRoomMetadata`/`RemoveParticipant`/`UpdateParticipant`/`MutePublishedTrack`);
+this is handled internally per-method, so a 401/403 here more often means the
+`apiKey`/`apiSecret` pair itself doesn't have access to the project at
+`LIVEKIT_HOST`.
 
 **Rooms never appear in queries** — confirm the webhook URL in your LiveKit
 project settings points at your deployment's `.convex.site` domain, and check
