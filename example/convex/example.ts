@@ -72,6 +72,64 @@ export const mutePublishedTrack = action({
   },
 });
 
+export const startRoomCompositeEgress = action({
+  args: {
+    roomName: v.string(),
+    layout: v.optional(v.string()),
+    audioOnly: v.optional(v.boolean()),
+    videoOnly: v.optional(v.boolean()),
+    filepath: v.optional(v.string()),
+    streamUrls: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    return await livekit.startRoomCompositeEgress(ctx, args);
+  },
+});
+
+export const stopEgress = action({
+  args: { egressId: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.stopEgress(ctx, args);
+  },
+});
+
+export const createIngress = action({
+  args: {
+    inputType: v.union(v.literal("rtmp"), v.literal("whip"), v.literal("url")),
+    name: v.string(),
+    roomName: v.string(),
+    participantIdentity: v.string(),
+    participantName: v.string(),
+    url: v.optional(v.string()),
+    enableTranscoding: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    return await livekit.createIngress(ctx, args);
+  },
+});
+
+export const updateIngress = action({
+  args: {
+    ingressId: v.string(),
+    name: v.optional(v.string()),
+    roomName: v.optional(v.string()),
+    participantIdentity: v.optional(v.string()),
+    participantName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await livekit.updateIngress(ctx, args);
+    return null;
+  },
+});
+
+export const deleteIngress = action({
+  args: { ingressId: v.string() },
+  handler: async (ctx, args) => {
+    await livekit.deleteIngress(ctx, args);
+    return null;
+  },
+});
+
 export const createRoomToken = action({
   args: {
     roomName: v.string(),
@@ -122,6 +180,20 @@ export const listTracksByParticipant = query({
   args: { roomName: v.string(), participantIdentity: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     return await livekit.listTracksByParticipant(ctx, args);
+  },
+});
+
+export const getIngress = query({
+  args: { ingressId: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.getIngress(ctx, args);
+  },
+});
+
+export const listIngressByRoom = query({
+  args: { roomName: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    return await livekit.listIngressByRoom(ctx, args);
   },
 });
 
