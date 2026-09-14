@@ -42,7 +42,7 @@ export function IngressPanel() {
   return (
     <>
       <Card title="Create an ingress endpoint">
-        <p className="hero-sub" style={{ marginBottom: "1rem" }}>
+        <p style={{ color: "var(--text-dim)", fontSize: "0.85rem", marginBottom: "1rem" }}>
           Provisions an RTMP, WHIP, or pulled-URL endpoint that publishes into a room as a regular
           participant — hand the returned URL/stream key to OBS or any encoder.
         </p>
