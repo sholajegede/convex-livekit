@@ -507,7 +507,7 @@ export class LiveKit {
   }
 
   async createRoom(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: CreateRoomArgs,
   ): Promise<{ sid: string; name: string }> {
     const room = await twirpRequest<LiveKitRoom>(
@@ -540,7 +540,7 @@ export class LiveKit {
   }
 
   async deleteRoom(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: { name: string },
   ): Promise<void> {
     await twirpRequest(
@@ -556,7 +556,7 @@ export class LiveKit {
   }
 
   async updateRoomMetadata(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: { name: string; metadata: string },
   ): Promise<void> {
     await twirpRequest(
@@ -572,7 +572,7 @@ export class LiveKit {
   }
 
   async removeParticipant(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: { roomName: string; identity: string },
   ): Promise<void> {
     await twirpRequest(
@@ -594,7 +594,7 @@ export class LiveKit {
    * push agent state that a Convex-backed UI can read reactively.
    */
   async updateParticipant(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: UpdateParticipantArgs,
   ): Promise<void> {
     await twirpRequest(
@@ -629,7 +629,7 @@ export class LiveKit {
    * reflected in Convex until the track is next published/unpublished.
    */
   async mutePublishedTrack(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: MutePublishedTrackArgs,
   ): Promise<void> {
     await twirpRequest(
@@ -662,7 +662,7 @@ export class LiveKit {
    * "deprecated" in favor of StartEgress but continues to support it.
    */
   async startRoomCompositeEgress(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: StartRoomCompositeEgressArgs,
   ): Promise<{ egressId: string; status: string }> {
     const fileOutputs = args.filepath ? [{ filepath: args.filepath }] : undefined;
@@ -697,7 +697,7 @@ export class LiveKit {
 
   /** Stops a running egress. LiveKit follows up with an `egress_ended` webhook once it fully finishes. */
   async stopEgress(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: { egressId: string },
   ): Promise<{ status: string }> {
     const egressInfo = await twirpRequest<LiveKitEgressInfo>(
@@ -728,7 +728,7 @@ export class LiveKit {
    * external encoder, OBS, or a existing stream into a LiveKit room.
    */
   async createIngress(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: CreateIngressArgs,
   ): Promise<{ ingressId: string; url?: string; streamKey?: string }> {
     const ingressInfo = await twirpRequest<LiveKitIngressInfo>(
@@ -767,7 +767,7 @@ export class LiveKit {
 
   /** Updates a reusable (RTMP/WHIP) ingress's name, target room, or participant identity/name. */
   async updateIngress(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: UpdateIngressArgs,
   ): Promise<void> {
     const ingressInfo = await twirpRequest<LiveKitIngressInfo>(
@@ -802,7 +802,7 @@ export class LiveKit {
 
   /** Permanently removes an ingress endpoint. */
   async deleteIngress(
-    ctx: GenericActionCtx<GenericDataModel>,
+    ctx: RunMutationCtx,
     args: { ingressId: string },
   ): Promise<void> {
     await twirpRequest(
@@ -896,4 +896,15 @@ export class LiveKit {
 
 type RunQueryCtx = {
   runQuery: GenericActionCtx<GenericDataModel>["runQuery"];
+};
+
+// Action-side methods (createRoom, startRoomCompositeEgress, createIngress,
+// etc.) only ever call ctx.runMutation — never runQuery, runAction, the
+// scheduler, or storage. Typing them against this minimal structural type
+// instead of the full GenericActionCtx<GenericDataModel> means they accept
+// any real app's ActionCtx, whose DataModel is a concrete set of tables
+// (not assignable to the generic GenericDataModel once an app defines any
+// tables of its own).
+type RunMutationCtx = {
+  runMutation: GenericActionCtx<GenericDataModel>["runMutation"];
 };
