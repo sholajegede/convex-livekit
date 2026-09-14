@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.4
+
+### Patch Changes
+
+- Add egress control: `startRoomCompositeEgress` and `stopEgress`, wrapping LiveKit's `StartRoomCompositeEgress`/`StopEgress` RPCs and patching the `egress` row immediately.
+- Add ingress support: a new `ingress` table plus `createIngress`, `updateIngress`, `deleteIngress`, `getIngress`, and `listIngressByRoom`, with `ingress_started`/`ingress_ended` webhooks keeping live endpoint state in sync.
+- Add retry with exponential backoff and jitter to every outbound LiveKit server API call, on `429`/`5xx` responses and network failures, honoring `Retry-After` when present.
+- Fix `mutePublishedTrack`'s request body to use `trackSid` instead of `track_sid`, matching the camelCase convention every other request body already used.
+
 ## 0.0.3
 
 ### Patch Changes
