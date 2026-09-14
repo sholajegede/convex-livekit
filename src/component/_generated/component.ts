@@ -49,6 +49,29 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
+      getIngress: FunctionReference<
+        "query",
+        "internal",
+        { ingressId: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          enabled?: boolean;
+          ingressId: string;
+          inputType: "rtmp" | "whip" | "url";
+          name?: string;
+          participantIdentity: string;
+          participantName?: string;
+          reusable?: boolean;
+          roomName: string;
+          state?: string;
+          streamKey?: string;
+          updatedAt: number;
+          url?: string;
+        },
+        Name
+      >;
       getRoom: FunctionReference<
         "query",
         "internal",
@@ -76,6 +99,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {},
         {
           egressCount: number;
+          ingressCount: number;
           liveRoomCount: number;
           liveTrackCount: number;
           participantCount: number;
@@ -122,6 +146,29 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           startedAt?: number;
           status: string;
           updatedAt: number;
+        }>,
+        Name
+      >;
+      listIngressByRoom: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; roomName: string },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          enabled?: boolean;
+          ingressId: string;
+          inputType: "rtmp" | "whip" | "url";
+          name?: string;
+          participantIdentity: string;
+          participantName?: string;
+          reusable?: boolean;
+          roomName: string;
+          state?: string;
+          streamKey?: string;
+          updatedAt: number;
+          url?: string;
         }>,
         Name
       >;
@@ -333,6 +380,25 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         string,
         Name
       >;
+      recordIngress: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          enabled?: boolean;
+          ingressId: string;
+          inputType: "rtmp" | "whip" | "url";
+          name?: string;
+          participantIdentity: string;
+          participantName?: string;
+          reusable?: boolean;
+          roomName: string;
+          state?: string;
+          streamKey?: string;
+          url?: string;
+        },
+        string,
+        Name
+      >;
       recordParticipant: FunctionReference<
         "mutation",
         "internal",
@@ -382,6 +448,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           type: string;
         },
         string,
+        Name
+      >;
+      removeIngress: FunctionReference<
+        "mutation",
+        "internal",
+        { ingressId: string },
+        null,
         Name
       >;
     };

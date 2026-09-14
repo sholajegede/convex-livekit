@@ -49,6 +49,37 @@ export type MutePublishedTrackArgs = {
   muted: boolean;
 };
 
+export type StartRoomCompositeEgressArgs = {
+  roomName: string;
+  layout?: string;
+  audioOnly?: boolean;
+  videoOnly?: boolean;
+  /** Writes the recording to this file path, via whatever storage (S3/GCP/Azure/local) your LiveKit server is configured with. */
+  filepath?: string;
+  /** Livestreams the recording out to one or more RTMP(S) URLs. */
+  streamUrls?: string[];
+};
+
+export type CreateIngressArgs = {
+  inputType: "rtmp" | "whip" | "url";
+  name: string;
+  roomName: string;
+  participantIdentity: string;
+  participantName: string;
+  /** Required when inputType is "url"; ignored otherwise. */
+  url?: string;
+  /** WHIP ingress cannot disable transcoding. */
+  enableTranscoding?: boolean;
+};
+
+export type UpdateIngressArgs = {
+  ingressId: string;
+  name?: string;
+  roomName?: string;
+  participantIdentity?: string;
+  participantName?: string;
+};
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
@@ -134,25 +165,89 @@ async function signLiveKitToken(
   return `${signingInput}.${base64UrlEncode(signature)}`;
 }
 
+const TWIRP_MAX_ATTEMPTS = 3;
+const TWIRP_BASE_DELAY_MS = 300;
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Exponential backoff (300ms, 600ms, 1200ms, ...) plus jitter, so a burst of
+// retries from several concurrent calls doesn't all land on the same tick
+// and immediately re-trip whatever rate limit tripped them.
+function backoffDelayMs(attempt: number): number {
+  return TWIRP_BASE_DELAY_MS * 2 ** attempt + Math.random() * TWIRP_BASE_DELAY_MS;
+}
+
+/**
+ * Calls a LiveKit Twirp RPC (RoomService, Egress, or Ingress). Retries on
+ * 429 and 5xx responses and on network-level failures (DNS, connection
+ * reset), honoring `Retry-After` when LiveKit sends one; anything else
+ * (400s other than 429) fails immediately since retrying a real client
+ * error — a bad room name, say — would only waste time.
+ */
 async function twirpRequest<T>(
   host: string,
   apiKey: string,
   apiSecret: string,
+  service: string,
   method: string,
   videoGrant: Record<string, unknown>,
   body: Record<string, unknown>,
 ): Promise<T> {
   const token = await signLiveKitToken(apiKey, apiSecret, videoGrant);
-  const res = await fetch(`${host.replace(/\/$/, "")}/twirp/livekit.RoomService/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`LiveKit API error (${method}): ${res.status} ${await res.text()}`);
+  const url = `${host.replace(/\/$/, "")}/twirp/livekit.${service}/${method}`;
+  const payload = JSON.stringify(body);
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
+  for (let attempt = 0; attempt < TWIRP_MAX_ATTEMPTS; attempt++) {
+    const isLastAttempt = attempt === TWIRP_MAX_ATTEMPTS - 1;
+    let res: Response;
+    try {
+      res = await fetch(url, { method: "POST", headers, body: payload });
+    } catch (err) {
+      if (isLastAttempt) throw err;
+      await sleep(backoffDelayMs(attempt));
+      continue;
+    }
+
+    if (res.ok) {
+      return (await res.json()) as T;
+    }
+
+    if (isLastAttempt || !isRetryableStatus(res.status)) {
+      throw new Error(`LiveKit API error (${service}.${method}): ${res.status} ${await res.text()}`);
+    }
+
+    const retryAfterSeconds = Number(res.headers.get("Retry-After"));
+    await sleep(
+      Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? retryAfterSeconds * 1000
+        : backoffDelayMs(attempt),
+    );
   }
-  return (await res.json()) as T;
+
+  // Unreachable — the loop above always returns or throws — but keeps this
+  // function's return type honest for TypeScript.
+  throw new Error(`LiveKit API error (${service}.${method}): exhausted retries`);
 }
+
+/** "RTMP_INPUT" | "WHIP_INPUT" | "URL_INPUT" -> "rtmp" | "whip" | "url". */
+function mapInputTypeFromLiveKit(value: string): CreateIngressArgs["inputType"] {
+  if (value === "WHIP_INPUT") return "whip";
+  if (value === "URL_INPUT") return "url";
+  return "rtmp";
+}
+
+const INPUT_TYPE_TO_LIVEKIT: Record<CreateIngressArgs["inputType"], string> = {
+  rtmp: "RTMP_INPUT",
+  whip: "WHIP_INPUT",
+  url: "URL_INPUT",
+};
 
 type LiveKitRoom = {
   sid: string;
@@ -162,6 +257,26 @@ type LiveKitRoom = {
   metadata?: string;
   creationTime?: number | string;
   numParticipants?: number;
+};
+
+type LiveKitEgressInfo = {
+  egressId: string;
+  roomName?: string;
+  status: string;
+  error?: string;
+};
+
+type LiveKitIngressInfo = {
+  ingressId: string;
+  name?: string;
+  streamKey?: string;
+  url?: string;
+  inputType: string;
+  roomName: string;
+  participantIdentity: string;
+  participantName?: string;
+  reusable?: boolean;
+  enabled?: boolean;
 };
 
 export class LiveKit {
@@ -269,6 +384,7 @@ export class LiveKit {
       const participant = event.participant as Record<string, unknown> | undefined;
       const track = event.track as Record<string, unknown> | undefined;
       const egressInfo = event.egressInfo as Record<string, unknown> | undefined;
+      const ingressInfo = event.ingressInfo as Record<string, unknown> | undefined;
 
       // room_started/room_finished/participant_joined/participant_left all
       // embed the same live Room object — sync numParticipants off whichever
@@ -359,10 +475,29 @@ export class LiveKit {
           startedAt: eventType === "egress_started" ? Date.now() : undefined,
           endedAt: eventType === "egress_ended" ? Date.now() : undefined,
         });
+      } else if (
+        (eventType === "ingress_started" || eventType === "ingress_ended") &&
+        ingressInfo
+      ) {
+        // ingressInfo is the full current IngressInfo either way (LiveKit
+        // doesn't send a partial diff), so this is a plain upsert — same
+        // shape as createIngress/updateIngress below.
+        const state = ingressInfo.state as Record<string, unknown> | undefined;
+        await ctx.runMutation(component_.lib.recordIngress, {
+          ingressId: String(ingressInfo.ingressId),
+          name: (ingressInfo.name as string) ?? undefined,
+          roomName: String(ingressInfo.roomName ?? ""),
+          participantIdentity: String(ingressInfo.participantIdentity ?? ""),
+          participantName: (ingressInfo.participantName as string) ?? undefined,
+          inputType: mapInputTypeFromLiveKit(String(ingressInfo.inputType ?? "RTMP_INPUT")),
+          url: (ingressInfo.url as string) ?? undefined,
+          streamKey: (ingressInfo.streamKey as string) ?? undefined,
+          reusable: (ingressInfo.reusable as boolean) ?? undefined,
+          enabled: (ingressInfo.enabled as boolean) ?? undefined,
+          state:
+            state && typeof state.status === "string" ? (state.status as string) : undefined,
+        });
       }
-      // ingress_* events are accepted (recorded in webhookEvents for
-      // idempotency/auditing) but do not update any other table — see the
-      // README's Limitations section.
 
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -379,6 +514,7 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "CreateRoom",
       { roomCreate: true },
       {
@@ -411,6 +547,7 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "DeleteRoom",
       { roomCreate: true },
       { room: args.name },
@@ -426,6 +563,7 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "UpdateRoomMetadata",
       { roomAdmin: true, room: args.name },
       { room: args.name, metadata: args.metadata },
@@ -441,6 +579,7 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "RemoveParticipant",
       { roomAdmin: true, room: args.roomName },
       { room: args.roomName, identity: args.identity },
@@ -462,6 +601,7 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "UpdateParticipant",
       { roomAdmin: true, room: args.roomName },
       {
@@ -496,12 +636,13 @@ export class LiveKit {
       this.options.host,
       this.options.apiKey,
       this.options.apiSecret,
+      "RoomService",
       "MutePublishedTrack",
       { roomAdmin: true, room: args.roomName },
       {
         room: args.roomName,
         identity: args.identity,
-        track_sid: args.trackSid,
+        trackSid: args.trackSid,
         muted: args.muted,
       },
     );
@@ -509,6 +650,171 @@ export class LiveKit {
       trackSid: args.trackSid,
       muted: args.muted,
     });
+  }
+
+  /**
+   * Starts a room-composite recording or livestream. Uses LiveKit's
+   * RoomCompositeEgress RPC — the original per-room egress API — rather
+   * than the newer unified StartEgress endpoint: this request shape is
+   * stable and fully documented, and room-composite already covers the two
+   * cases this component is built for (record the whole room to a file, or
+   * push it out as a livestream). LiveKit marks RoomCompositeEgress
+   * "deprecated" in favor of StartEgress but continues to support it.
+   */
+  async startRoomCompositeEgress(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: StartRoomCompositeEgressArgs,
+  ): Promise<{ egressId: string; status: string }> {
+    const fileOutputs = args.filepath ? [{ filepath: args.filepath }] : undefined;
+    const streamOutputs = args.streamUrls?.length ? [{ urls: args.streamUrls }] : undefined;
+
+    const egressInfo = await twirpRequest<LiveKitEgressInfo>(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "Egress",
+      "StartRoomCompositeEgress",
+      { roomRecord: true },
+      {
+        roomName: args.roomName,
+        layout: args.layout,
+        audioOnly: args.audioOnly,
+        videoOnly: args.videoOnly,
+        fileOutputs,
+        streamOutputs,
+      },
+    );
+
+    await ctx.runMutation(this.component.lib.recordEgress, {
+      egressId: egressInfo.egressId,
+      roomName: egressInfo.roomName ?? args.roomName,
+      status: egressInfo.status ?? "EGRESS_STARTING",
+      startedAt: Date.now(),
+    });
+
+    return { egressId: egressInfo.egressId, status: egressInfo.status };
+  }
+
+  /** Stops a running egress. LiveKit follows up with an `egress_ended` webhook once it fully finishes. */
+  async stopEgress(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: { egressId: string },
+  ): Promise<{ status: string }> {
+    const egressInfo = await twirpRequest<LiveKitEgressInfo>(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "Egress",
+      "StopEgress",
+      { roomRecord: true },
+      { egressId: args.egressId },
+    );
+
+    // recordEgress (not a partial patch) since StopEgress's response is the
+    // full current EgressInfo, same as the webhook path.
+    await ctx.runMutation(this.component.lib.recordEgress, {
+      egressId: args.egressId,
+      roomName: egressInfo.roomName,
+      status: egressInfo.status ?? "EGRESS_ENDING",
+      error: egressInfo.error,
+    });
+
+    return { status: egressInfo.status };
+  }
+
+  /**
+   * Provisions an ingress endpoint (RTMP, WHIP, or a pulled URL) that
+   * publishes into a room as a regular participant — useful for bringing an
+   * external encoder, OBS, or a existing stream into a LiveKit room.
+   */
+  async createIngress(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: CreateIngressArgs,
+  ): Promise<{ ingressId: string; url?: string; streamKey?: string }> {
+    const ingressInfo = await twirpRequest<LiveKitIngressInfo>(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "Ingress",
+      "CreateIngress",
+      { ingressAdmin: true },
+      {
+        inputType: INPUT_TYPE_TO_LIVEKIT[args.inputType],
+        name: args.name,
+        roomName: args.roomName,
+        participantIdentity: args.participantIdentity,
+        participantName: args.participantName,
+        url: args.url,
+        enableTranscoding: args.enableTranscoding,
+      },
+    );
+
+    await ctx.runMutation(this.component.lib.recordIngress, {
+      ingressId: ingressInfo.ingressId,
+      name: ingressInfo.name,
+      roomName: ingressInfo.roomName,
+      participantIdentity: ingressInfo.participantIdentity,
+      participantName: ingressInfo.participantName,
+      inputType: mapInputTypeFromLiveKit(ingressInfo.inputType),
+      url: ingressInfo.url,
+      streamKey: ingressInfo.streamKey,
+      reusable: ingressInfo.reusable,
+      enabled: ingressInfo.enabled,
+    });
+
+    return { ingressId: ingressInfo.ingressId, url: ingressInfo.url, streamKey: ingressInfo.streamKey };
+  }
+
+  /** Updates a reusable (RTMP/WHIP) ingress's name, target room, or participant identity/name. */
+  async updateIngress(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: UpdateIngressArgs,
+  ): Promise<void> {
+    const ingressInfo = await twirpRequest<LiveKitIngressInfo>(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "Ingress",
+      "UpdateIngress",
+      { ingressAdmin: true },
+      {
+        ingressId: args.ingressId,
+        name: args.name,
+        roomName: args.roomName,
+        participantIdentity: args.participantIdentity,
+        participantName: args.participantName,
+      },
+    );
+
+    await ctx.runMutation(this.component.lib.recordIngress, {
+      ingressId: ingressInfo.ingressId,
+      name: ingressInfo.name,
+      roomName: ingressInfo.roomName,
+      participantIdentity: ingressInfo.participantIdentity,
+      participantName: ingressInfo.participantName,
+      inputType: mapInputTypeFromLiveKit(ingressInfo.inputType),
+      url: ingressInfo.url,
+      streamKey: ingressInfo.streamKey,
+      reusable: ingressInfo.reusable,
+      enabled: ingressInfo.enabled,
+    });
+  }
+
+  /** Permanently removes an ingress endpoint. */
+  async deleteIngress(
+    ctx: GenericActionCtx<GenericDataModel>,
+    args: { ingressId: string },
+  ): Promise<void> {
+    await twirpRequest(
+      this.options.host,
+      this.options.apiKey,
+      this.options.apiSecret,
+      "Ingress",
+      "DeleteIngress",
+      { ingressAdmin: true },
+      { ingressId: args.ingressId },
+    );
+    await ctx.runMutation(this.component.lib.removeIngress, { ingressId: args.ingressId });
   }
 
   /** Mints a room-join access token for a client to connect with. Touches no database. */
@@ -561,6 +867,14 @@ export class LiveKit {
     args: { roomName: string; participantIdentity: string; limit?: number },
   ) {
     return await ctx.runQuery(this.component.lib.listTracksByParticipant, args);
+  }
+
+  async getIngress(ctx: RunQueryCtx, args: { ingressId: string }) {
+    return await ctx.runQuery(this.component.lib.getIngress, args);
+  }
+
+  async listIngressByRoom(ctx: RunQueryCtx, args: { roomName: string; limit?: number }) {
+    return await ctx.runQuery(this.component.lib.listIngressByRoom, args);
   }
 
   async getStats(ctx: RunQueryCtx) {

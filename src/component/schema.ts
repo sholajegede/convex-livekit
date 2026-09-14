@@ -87,6 +87,33 @@ export default defineSchema({
     .index("by_roomName", ["roomName"])
     .index("by_participant", ["roomName", "participantIdentity"]),
 
+  // One row per ingress endpoint. Unlike rooms/participants/tracks, a
+  // deleted ingress is actually removed (see removeIngress in lib.ts) rather
+  // than kept as history — it's a provisioned resource, not a lifecycle
+  // event, so a stale row wouldn't mean anything once LiveKit forgets it.
+  ingress: defineTable({
+    ingressId: v.string(),
+    name: v.optional(v.string()),
+    roomName: v.string(),
+    participantIdentity: v.string(),
+    participantName: v.optional(v.string()),
+    inputType: v.union(v.literal("rtmp"), v.literal("whip"), v.literal("url")),
+    url: v.optional(v.string()),
+    // RTMP encoder credential. Treat like the LiveKit API secret: never
+    // expose this to a browser/client, only read it server-side.
+    streamKey: v.optional(v.string()),
+    reusable: v.optional(v.boolean()),
+    enabled: v.optional(v.boolean()),
+    // "ENDPOINT_INACTIVE" | "ENDPOINT_BUFFERING" | "ENDPOINT_PUBLISHING" |
+    // "ENDPOINT_ERROR" | "ENDPOINT_COMPLETE" — LiveKit's IngressState.status,
+    // kept verbatim, same convention as egress.status above.
+    state: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_ingressId", ["ingressId"])
+    .index("by_roomName", ["roomName"]),
+
   webhookEvents: defineTable({
     eventId: v.string(), // LiveKit's own webhook event `id`
     eventType: v.string(), // the `event` field, e.g. "room_started"

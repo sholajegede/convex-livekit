@@ -67,6 +67,24 @@ const trackValidator = v.object({
   updatedAt: v.number(),
 });
 
+const ingressValidator = v.object({
+  _id: v.id("ingress"),
+  _creationTime: v.number(),
+  ingressId: v.string(),
+  name: v.optional(v.string()),
+  roomName: v.string(),
+  participantIdentity: v.string(),
+  participantName: v.optional(v.string()),
+  inputType: v.union(v.literal("rtmp"), v.literal("whip"), v.literal("url")),
+  url: v.optional(v.string()),
+  streamKey: v.optional(v.string()),
+  reusable: v.optional(v.boolean()),
+  enabled: v.optional(v.boolean()),
+  state: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
 // ─── Queries ────────────────────────────────────────────────────────────────
 
 export const getRoom = query({
@@ -158,6 +176,29 @@ export const listTracksByParticipant = query({
       .withIndex("by_participant", (q) =>
         q.eq("roomName", args.roomName).eq("participantIdentity", args.participantIdentity),
       )
+      .order("desc")
+      .take(args.limit ?? 50);
+  },
+});
+
+export const getIngress = query({
+  args: { ingressId: v.string() },
+  returns: v.union(v.null(), ingressValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("ingress")
+      .withIndex("by_ingressId", (q) => q.eq("ingressId", args.ingressId))
+      .first();
+  },
+});
+
+export const listIngressByRoom = query({
+  args: { roomName: v.string(), limit: v.optional(v.number()) },
+  returns: v.array(ingressValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("ingress")
+      .withIndex("by_roomName", (q) => q.eq("roomName", args.roomName))
       .order("desc")
       .take(args.limit ?? 50);
   },
@@ -422,6 +463,57 @@ export const patchTrackMuted = mutation({
   },
 });
 
+// Shared by both the createIngress/updateIngress actions and the
+// ingress_started/ingress_ended webhook branch — LiveKit's IngressInfo is
+// always the full current config either way, so there's no partial-patch
+// case to handle separately (unlike patchParticipant/patchTrackMuted).
+export const recordIngress = mutation({
+  args: {
+    ingressId: v.string(),
+    name: v.optional(v.string()),
+    roomName: v.string(),
+    participantIdentity: v.string(),
+    participantName: v.optional(v.string()),
+    inputType: v.union(v.literal("rtmp"), v.literal("whip"), v.literal("url")),
+    url: v.optional(v.string()),
+    streamKey: v.optional(v.string()),
+    reusable: v.optional(v.boolean()),
+    enabled: v.optional(v.boolean()),
+    state: v.optional(v.string()),
+  },
+  returns: v.id("ingress"),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("ingress")
+      .withIndex("by_ingressId", (q) => q.eq("ingressId", args.ingressId))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { ...args, updatedAt: now });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("ingress", { ...args, createdAt: now, updatedAt: now });
+  },
+});
+
+// Unlike markTrackUnpublished etc., this actually deletes the row — see the
+// schema's comment on the ingress table for why.
+export const removeIngress = mutation({
+  args: { ingressId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("ingress")
+      .withIndex("by_ingressId", (q) => q.eq("ingressId", args.ingressId))
+      .first();
+    if (!existing) return null;
+    await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
 // ─── Dashboard queries ──────────────────────────────────────────────────────
 
 export const getStats = query({
@@ -433,14 +525,16 @@ export const getStats = query({
     egressCount: v.number(),
     trackCount: v.number(),
     liveTrackCount: v.number(),
+    ingressCount: v.number(),
     webhookEventCount: v.number(),
   }),
   handler: async (ctx) => {
-    const [rooms, participants, egress, tracks, webhookEvents] = await Promise.all([
+    const [rooms, participants, egress, tracks, ingress, webhookEvents] = await Promise.all([
       ctx.db.query("rooms").collect(),
       ctx.db.query("participants").collect(),
       ctx.db.query("egress").collect(),
       ctx.db.query("tracks").collect(),
+      ctx.db.query("ingress").collect(),
       ctx.db.query("webhookEvents").collect(),
     ]);
     return {
@@ -450,6 +544,7 @@ export const getStats = query({
       egressCount: egress.length,
       trackCount: tracks.length,
       liveTrackCount: tracks.filter((t) => t.unpublishedAt === undefined).length,
+      ingressCount: ingress.length,
       webhookEventCount: webhookEvents.length,
     };
   },
