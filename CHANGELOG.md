@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5
+
+### Patch Changes
+
+- Fix every action method on `LiveKit` (`createRoom`, `startRoomCompositeEgress`, `createIngress`, and the rest) being typed as `ctx: GenericActionCtx<GenericDataModel>`, which only type-checks when the calling app's schema is empty. Any real app with its own tables — which is every real app — got a compile error on every one of these calls. They now accept a minimal structural ctx type instead, matching the pattern query methods already used.
+
 ## 0.0.4
 
 ### Patch Changes
