@@ -1,8 +1,8 @@
 # convex-livekit
 
-Sync LiveKit rooms, participants, tracks, and egress into your Convex
-database reactively, and manage rooms, participants, and tracks directly
-from Convex functions.
+Sync LiveKit rooms, participants, tracks, egress, and ingress into your
+Convex database reactively, and manage rooms, participants, tracks, egress,
+and ingress directly from Convex functions.
 
 [![npm version](https://img.shields.io/npm/v/convex-livekit.svg)](https://www.npmjs.com/package/convex-livekit)
 [![Convex Component](https://www.convex.dev/components/badge/sholajegede/convex-livekit)](https://www.convex.dev/components/sholajegede/convex-livekit)
@@ -47,21 +47,31 @@ authenticating clients:
   participant's tracks (source: camera, microphone, screen share; muted
   snapshot; type), so you can tell not just who's in a room but whether their
   mic or camera is actually live.
-- **Egress tracking** — `egress_started`/`egress_updated`/`egress_ended` events
-  are recorded too, so you can show recording/streaming status live.
-- **Room, participant, and track management from your backend** — call
-  `createRoom`, `deleteRoom`, `updateRoomMetadata`, `removeParticipant`,
-  `updateParticipant`, and `mutePublishedTrack` from Convex actions, and mint
-  room-join access tokens with `createRoomToken` for your clients to connect
-  with.
+- **Egress tracking and control** — `egress_started`/`egress_updated`/`egress_ended`
+  events are recorded, and `startRoomCompositeEgress`/`stopEgress` let you
+  start or stop a room recording or livestream directly, so you can show and
+  drive recording/streaming status live.
+- **Ingress tracking and management** — `createIngress`/`updateIngress`/`deleteIngress`
+  provision RTMP, WHIP, or pulled-URL endpoints that publish into a room as a
+  regular participant, and `ingress_started`/`ingress_ended` keep their live
+  state (buffering, publishing, error) synced.
+- **Room, participant, track, egress, and ingress management from your backend**
+  — call `createRoom`, `deleteRoom`, `updateRoomMetadata`, `removeParticipant`,
+  `updateParticipant`, `mutePublishedTrack`, `startRoomCompositeEgress`,
+  `stopEgress`, `createIngress`, `updateIngress`, and `deleteIngress` from
+  Convex actions, and mint room-join access tokens with `createRoomToken` for
+  your clients to connect with.
+- **Resilient server API calls** — every outbound call to LiveKit retries on
+  `429`/`5xx` responses and network failures with exponential backoff and
+  jitter, honoring a `Retry-After` header when LiveKit sends one.
 - **Cryptographically verified webhooks** — every inbound webhook's signed JWT
   is verified (signature, issuer, expiry, and a body-hash check) before anything
   is written, matching LiveKit's own webhook verification scheme.
 
 This is a [Convex component](https://convex.dev/components): its `rooms`,
-`participants`, `tracks`, `egress`, and `webhookEvents` tables live in an
-isolated schema, not your app's schema, and are only reachable through the
-functions this component exposes.
+`participants`, `tracks`, `egress`, `ingress`, and `webhookEvents` tables live
+in an isolated schema, not your app's schema, and are only reachable through
+the functions this component exposes.
 
 ## Table of Contents
 
@@ -81,7 +91,9 @@ functions this component exposes.
     - [Mint a join token for a client](#mint-a-join-token-for-a-client)
     - [Remove a participant](#remove-a-participant)
     - [Update a participant, or mute their track](#update-a-participant-or-mute-their-track)
-    - [Read rooms, participants, and tracks reactively](#read-rooms-participants-and-tracks-reactively)
+    - [Record or stream a room (egress)](#record-or-stream-a-room-egress)
+    - [Bring an external stream into a room (ingress)](#bring-an-external-stream-into-a-room-ingress)
+    - [Read rooms, participants, tracks, egress, and ingress reactively](#read-rooms-participants-tracks-egress-and-ingress-reactively)
   - [Agent state](#agent-state)
   - [API Reference](#api-reference)
     - [Actions (need `ctx` from an action)](#actions-need-ctx-from-an-action)
@@ -272,7 +284,58 @@ Both call LiveKit's server API first, then patch the corresponding Convex row
 so the change is visible in queries immediately — no round trip through a
 webhook required.
 
-### Read rooms, participants, and tracks reactively
+### Record or stream a room (egress)
+
+```ts
+export const startRecording = action({
+  args: { roomName: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.startRoomCompositeEgress(ctx, {
+      roomName: args.roomName,
+      filepath: `recordings/${args.roomName}-{time}.mp4`,
+    });
+  },
+});
+
+export const stopRecording = action({
+  args: { egressId: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.stopEgress(ctx, args);
+  },
+});
+```
+
+`startRoomCompositeEgress` records or livestreams the whole room (mixed
+audio/video of every participant) to a file, one or more RTMP(S) URLs, or
+both. It uses LiveKit's `StartRoomCompositeEgress` RPC — the file/stream
+actually lands wherever your LiveKit server's own storage config
+(S3/GCP/Azure/local) sends it. Both calls patch the `egress` row immediately,
+same pattern as the room/participant/track actions above.
+
+### Bring an external stream into a room (ingress)
+
+```ts
+export const createStreamKey = action({
+  args: { roomName: v.string(), identity: v.string() },
+  handler: async (ctx, args) => {
+    return await livekit.createIngress(ctx, {
+      inputType: "rtmp",
+      name: `${args.roomName}-obs`,
+      roomName: args.roomName,
+      participantIdentity: args.identity,
+      participantName: args.identity,
+    });
+  },
+});
+```
+
+Returns `{ ingressId, url, streamKey }` — hand `url`/`streamKey` to OBS or any
+RTMP encoder, and it joins the room as a regular participant. `updateIngress`
+changes a reusable (RTMP/WHIP) ingress's target room or identity; `deleteIngress`
+removes it permanently (unlike the other tables, the row is actually deleted,
+not kept as history — see [Database Schema](#database-schema)).
+
+### Read rooms, participants, tracks, egress, and ingress reactively
 
 ```tsx
 const rooms = useQuery(api.example.listRooms, {});
@@ -280,11 +343,13 @@ const participants = useQuery(api.example.listParticipantsByRoom, {
   roomName: "standup",
 });
 const tracks = useQuery(api.example.listTracksByRoom, { roomName: "standup" });
+const ingress = useQuery(api.example.listIngressByRoom, { roomName: "standup" });
 ```
 
 Every `room_started`/`room_finished`,
-`participant_joined`/`participant_left`/`participant_connection_aborted`, and
-`track_published`/`track_unpublished` webhook event patches or inserts a row,
+`participant_joined`/`participant_left`/`participant_connection_aborted`,
+`track_published`/`track_unpublished`, `egress_started`/`egress_updated`/`egress_ended`,
+and `ingress_started`/`ingress_ended` webhook event patches or inserts a row,
 so these queries re-render live — no polling.
 
 ## Agent state
@@ -312,6 +377,11 @@ this can and can't stay in sync with.
 | `removeParticipant(ctx, { roomName, identity })`                                                     | Disconnects a participant via the server API and marks them left.         |
 | `updateParticipant(ctx, { roomName, identity, metadata?, name?, attributes?, permission? })`         | Updates a participant's metadata, name, attributes, or permissions via the server API and patches the stored row. |
 | `mutePublishedTrack(ctx, { roomName, identity, trackSid, muted })`                                   | Mutes or unmutes a participant's track via the server API and patches the stored row. |
+| `startRoomCompositeEgress(ctx, { roomName, layout?, audioOnly?, videoOnly?, filepath?, streamUrls? })` | Starts a room-composite recording and/or livestream. Returns `{ egressId, status }`. |
+| `stopEgress(ctx, { egressId })`                                                                      | Stops a running egress. Returns `{ status }`. |
+| `createIngress(ctx, { inputType, name, roomName, participantIdentity, participantName, url?, enableTranscoding? })` | Provisions an RTMP/WHIP/URL ingress endpoint. Returns `{ ingressId, url?, streamKey? }`. |
+| `updateIngress(ctx, { ingressId, name?, roomName?, participantIdentity?, participantName? })`        | Updates a reusable ingress's config via the server API and patches the stored row. |
+| `deleteIngress(ctx, { ingressId })`                                                                  | Permanently removes an ingress endpoint via the server API and deletes the stored row. |
 
 ### Plain methods (no `ctx` — touch no database)
 
@@ -331,7 +401,9 @@ this can and can't stay in sync with.
 | `getTrack(ctx, { trackSid })`                                         | Fetch one track by its LiveKit track sid.                                                                                         |
 | `listTracksByRoom(ctx, { roomName, limit? })`                         | Most recently updated tracks for a room, newest first.                                                                            |
 | `listTracksByParticipant(ctx, { roomName, participantIdentity, limit? })` | Most recently updated tracks for one participant in a room, newest first.                                                     |
-| `getStats(ctx)`                                                       | Counts: total rooms, currently-live rooms, currently-joined participants, egress jobs, total/currently-published tracks, and webhook deliveries. |
+| `getIngress(ctx, { ingressId })`                                      | Fetch one ingress endpoint by its id.                                                                                              |
+| `listIngressByRoom(ctx, { roomName, limit? })`                        | Most recently updated ingress endpoints for a room, newest first.                                                                 |
+| `getStats(ctx)`                                                       | Counts: total rooms, currently-live rooms, currently-joined participants, egress jobs, total/currently-published tracks, ingress endpoints, and webhook deliveries. |
 | `listRecentParticipants(ctx, { limit? })`                             | Most recently updated participants across every room, newest first.                                                               |
 | `listRecentEgress(ctx, { limit? })`                                   | Most recently updated egress jobs across every room, newest first.                                                                |
 | `listRecentWebhookEvents(ctx, { limit? })`                            | Most recently received webhook deliveries, newest first.                                                                          |
@@ -340,7 +412,7 @@ this can and can't stay in sync with.
 
 | Property         | Description                                                                                                                               |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `webhookHandler` | An `httpAction` that verifies, deduplicates, and processes LiveKit's room, participant, track, and egress webhook events. Mount it at any route. |
+| `webhookHandler` | An `httpAction` that verifies, deduplicates, and processes LiveKit's room, participant, track, egress, and ingress webhook events. Mount it at any route. |
 
 ## Type Reference
 
@@ -388,6 +460,33 @@ type MutePublishedTrackArgs = {
   identity: string;
   trackSid: string;
   muted: boolean;
+};
+
+type StartRoomCompositeEgressArgs = {
+  roomName: string;
+  layout?: string;
+  audioOnly?: boolean;
+  videoOnly?: boolean;
+  filepath?: string; // writes the recording to this path via your storage config
+  streamUrls?: string[]; // livestreams to one or more RTMP(S) URLs
+};
+
+type CreateIngressArgs = {
+  inputType: "rtmp" | "whip" | "url";
+  name: string;
+  roomName: string;
+  participantIdentity: string;
+  participantName: string;
+  url?: string; // required when inputType is "url"
+  enableTranscoding?: boolean; // WHIP ingress cannot disable transcoding
+};
+
+type UpdateIngressArgs = {
+  ingressId: string;
+  name?: string;
+  roomName?: string;
+  participantIdentity?: string;
+  participantName?: string;
 };
 
 type Room = {
@@ -443,12 +542,27 @@ type Egress = {
   createdAt: number;
   updatedAt: number;
 };
+
+type Ingress = {
+  ingressId: string;
+  name?: string;
+  roomName: string;
+  participantIdentity: string;
+  participantName?: string;
+  inputType: "rtmp" | "whip" | "url";
+  url?: string;
+  streamKey?: string; // RTMP encoder credential — treat like the API secret
+  reusable?: boolean;
+  enabled?: boolean;
+  state?: string; // "ENDPOINT_INACTIVE" | "ENDPOINT_BUFFERING" | "ENDPOINT_PUBLISHING" | "ENDPOINT_ERROR" | "ENDPOINT_COMPLETE"
+  createdAt: number;
+  updatedAt: number;
+};
 ```
 
 ## Webhook Events
 
-The webhook handler processes eight of LiveKit's webhook event types (`ingress_*`
-is accepted for idempotency but otherwise ignored — see Limitations):
+The webhook handler processes ten of LiveKit's webhook event types:
 
 - **`room_started`** / **`room_finished`** — upsert or finalize the room's row.
 - **`participant_joined`** — upserts the participant's row (keyed by their
@@ -461,6 +575,8 @@ is accepted for idempotency but otherwise ignored — see Limitations):
   the track's row, keyed by its `sid`.
 - **`egress_started`** / **`egress_updated`** / **`egress_ended`** — upsert the
   egress job's row.
+- **`ingress_started`** / **`ingress_ended`** — upsert the ingress endpoint's
+  row, including its live `state` (buffering, publishing, error, complete).
 
 Every request's `Authorization` header (a signed JWT, with or without a
 `Bearer ` prefix — LiveKit's docs show it bare) is verified in full: its HS256
@@ -529,6 +645,24 @@ egress: {
   updatedAt: number;
 }
 
+ingress: {
+  ingressId: string;             // indexed: by_ingressId
+  name?: string;
+  roomName: string;              // indexed: by_roomName
+  participantIdentity: string;
+  participantName?: string;
+  inputType: "rtmp" | "whip" | "url";
+  url?: string;
+  streamKey?: string;            // RTMP encoder credential — treat like the API secret
+  reusable?: boolean;
+  enabled?: boolean;
+  state?: string;                 // "ENDPOINT_INACTIVE" | "ENDPOINT_BUFFERING" | "ENDPOINT_PUBLISHING" | "ENDPOINT_ERROR" | "ENDPOINT_COMPLETE"
+  createdAt: number;
+  updatedAt: number;
+  // Deleted for real on deleteIngress, unlike every other table here — see
+  // Limitations.
+}
+
 webhookEvents: {
   eventId: string;   // indexed: by_eventId — LiveKit's own webhook event id
   eventType: string; // the `event` field, e.g. "room_started"
@@ -573,6 +707,12 @@ accept a `ttlSeconds` override. There is no persistent server-side session —
 every call is authenticated independently, the same way LiveKit's own
 Node/Go/Python server SDKs work.
 
+Every outbound call also retries on `429` and `5xx` responses and on
+network-level failures (up to 3 attempts total), with exponential backoff
+plus jitter between attempts, honoring a `Retry-After` header when LiveKit
+sends one. Other `4xx` responses (a bad room name, a missing permission) fail
+immediately — retrying a real client error would only waste time.
+
 ## Example App
 
 `example/` is a small React app (`npm run dev`, then open `localhost:5173`) with
@@ -613,28 +753,38 @@ queries directly: room lifecycle transitions (confirming `markRoomFinished` and
 `patchRoomMetadata` only touch their own fields), participant join/leave
 tracking and attributes, track publish/unpublish/mute, the room
 participant-count sync staying current without disturbing status or metadata,
-egress upsert behavior, webhook idempotency via `checkAndRecordEvent`, and the
-dashboard queries. `example/convex/http.test.ts` separately exercises the
-actual `httpAction` end to end — signing requests with an independent HS256
+egress upsert behavior, ingress upsert/delete behavior (confirming `removeIngress`
+actually deletes the row, unlike the keep-history mutations for every other
+table), webhook idempotency via `checkAndRecordEvent`, and the dashboard
+queries. `example/convex/http.test.ts` separately exercises the actual
+`httpAction` end to end — signing requests with an independent HS256
 implementation (not the component's own) to verify the handler rejects a
 missing auth header, a wrong secret, a wrong issuer, an expired token, and a
-tampered body, and correctly dispatches `participant_connection_aborted` and
-the track events.
+tampered body, and correctly dispatches `participant_connection_aborted`, the
+track events, and the ingress lifecycle.
 
 ## Limitations
 
-- `ingress_*` events are accepted (and recorded in `webhookEvents` for
-  auditing) but not otherwise persisted — Ingress resource management
-  (bringing external RTMP/WHIP streams into a room) is a distinct feature area
-  from the server-side control plane this component covers.
-- Track `muted` and participant `attributes` are snapshots, not continuously
-  reactive: LiveKit has no webhook for a live mute toggle or an attributes
-  change, so these fields are only refreshed at `track_published` /
-  join-leave-abort time, and whenever this component's own
-  `mutePublishedTrack` / `updateParticipant` calls succeed. A participant
-  muting themselves client-side, or an agent changing its own attributes
-  without going through `updateParticipant`, won't be reflected until the next
-  event that does carry it.
+- Track `muted`, participant `attributes`, and ingress `state` are snapshots,
+  not continuously reactive: LiveKit has no webhook for a live mute toggle, an
+  attributes change, or an ingress state transition outside of `ingress_started`/
+  `ingress_ended`. These fields only refresh when their triggering webhook
+  arrives, or when this component's own `mutePublishedTrack` /
+  `updateParticipant` / `createIngress` / `updateIngress` calls succeed. A
+  participant muting themselves client-side, or an agent changing its own
+  attributes without going through `updateParticipant`, won't be reflected
+  until the next event that does carry it.
+- Egress control is scoped to room-composite recording/streaming
+  (`startRoomCompositeEgress`/`stopEgress`) — LiveKit's per-participant and
+  per-track egress variants (`StartParticipantEgress`, `StartTrackCompositeEgress`,
+  `StartTrackEgress`, `StartWebEgress`), and the newer unified `StartEgress`
+  endpoint, aren't wrapped. Room-composite covers the two common cases
+  (record the whole room, or livestream it); the others can be added on the
+  same pattern.
+- `deleteIngress` actually deletes the Convex row, unlike every other table
+  here, which keeps history after the underlying resource ends (a room
+  finishes, a track unpublishes) — a deleted ingress endpoint is a removed
+  resource, not a lifecycle state, so a stale row wouldn't mean anything.
 - SIP is out of scope entirely — it's a different product surface
   (telephony), not an extension of the server-side control plane this
   component wraps.
@@ -642,8 +792,10 @@ the track events.
   update metadata, remove/update participant, mute a track) are wrapped;
   multi-room operations (`moveParticipant`, `forwardParticipant`) and
   messaging (`sendData`) are not.
-- Rate limits are your LiveKit project's own — this component does not implement
-  its own rate limiting or backoff.
+- Outbound calls to LiveKit retry on `429`/`5xx`/network failures (see
+  [Authentication](#authentication)), but there's no client-side rate
+  limiting ahead of that — a burst of calls can still all hit LiveKit at
+  once and rely on the retry to absorb any resulting `429`s.
 
 ## Troubleshooting
 
