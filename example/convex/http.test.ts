@@ -201,6 +201,53 @@ describe("participant lifecycle", () => {
   });
 });
 
+describe("ingress lifecycle", () => {
+  test("ingress_started upserts the ingress row, ingress_ended patches its live state", async () => {
+    const t = initConvexTest();
+
+    await postWebhook(
+      t,
+      event({
+        id: "evt_ingress_start",
+        event: "ingress_started",
+        ingressInfo: {
+          ingressId: "IN_1",
+          name: "obs-stream",
+          roomName: "standup",
+          participantIdentity: "rtmp-encoder",
+          inputType: "RTMP_INPUT",
+          url: "rtmp://ingest.example.com/live",
+          streamKey: "sk_live_1",
+          state: { status: "ENDPOINT_BUFFERING" },
+        },
+      }),
+    );
+
+    let ingress = await t.query(api.example.listIngressByRoom, { roomName: "standup" });
+    expect(ingress).toHaveLength(1);
+    expect(ingress[0].inputType).toBe("rtmp");
+    expect(ingress[0].state).toBe("ENDPOINT_BUFFERING");
+
+    await postWebhook(
+      t,
+      event({
+        id: "evt_ingress_publishing",
+        event: "ingress_ended",
+        ingressInfo: {
+          ingressId: "IN_1",
+          roomName: "standup",
+          participantIdentity: "rtmp-encoder",
+          inputType: "RTMP_INPUT",
+          state: { status: "ENDPOINT_COMPLETE" },
+        },
+      }),
+    );
+
+    ingress = await t.query(api.example.listIngressByRoom, { roomName: "standup" });
+    expect(ingress[0].state).toBe("ENDPOINT_COMPLETE");
+  });
+});
+
 describe("track lifecycle", () => {
   test("track_published syncs a track, track_unpublished marks it unpublished", async () => {
     const t = initConvexTest();

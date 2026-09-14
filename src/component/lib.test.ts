@@ -324,8 +324,80 @@ describe("tracks", () => {
   });
 });
 
+describe("ingress", () => {
+  test("recordIngress upserts by ingressId", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_1",
+      roomName: "standup",
+      participantIdentity: "rtmp-encoder",
+      inputType: "rtmp",
+      url: "rtmp://ingest.example.com/live",
+      streamKey: "sk_live_1",
+    });
+
+    let ingress = await t.query(api.lib.getIngress, { ingressId: "IN_1" });
+    expect(ingress?.inputType).toBe("rtmp");
+    expect(ingress?.state).toBeUndefined();
+
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_1",
+      roomName: "standup",
+      participantIdentity: "rtmp-encoder",
+      inputType: "rtmp",
+      state: "ENDPOINT_PUBLISHING",
+    });
+
+    ingress = await t.query(api.lib.getIngress, { ingressId: "IN_1" });
+    expect(ingress?.state).toBe("ENDPOINT_PUBLISHING");
+  });
+
+  test("removeIngress deletes the row, unlike the keep-history mutations for other tables", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_2",
+      roomName: "standup",
+      participantIdentity: "rtmp-encoder",
+      inputType: "whip",
+    });
+    expect(await t.query(api.lib.getIngress, { ingressId: "IN_2" })).not.toBeNull();
+
+    await t.mutation(api.lib.removeIngress, { ingressId: "IN_2" });
+    expect(await t.query(api.lib.getIngress, { ingressId: "IN_2" })).toBeNull();
+  });
+
+  test("removeIngress is a no-op for an ingress that isn't recorded", async () => {
+    const t = initConvexTest();
+    await t.mutation(api.lib.removeIngress, { ingressId: "IN_ghost" });
+    expect(await t.query(api.lib.getIngress, { ingressId: "IN_ghost" })).toBeNull();
+  });
+
+  test("listIngressByRoom scopes to one room", async () => {
+    const t = initConvexTest();
+
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_10",
+      roomName: "standup",
+      participantIdentity: "encoder-1",
+      inputType: "rtmp",
+    });
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_11",
+      roomName: "town-hall",
+      participantIdentity: "encoder-2",
+      inputType: "url",
+    });
+
+    const ingress = await t.query(api.lib.listIngressByRoom, { roomName: "standup" });
+    expect(ingress).toHaveLength(1);
+    expect(ingress[0].ingressId).toBe("IN_10");
+  });
+});
+
 describe("dashboard queries", () => {
-  test("getStats counts rooms, live rooms, joined participants, egress, tracks, and webhook events", async () => {
+  test("getStats counts rooms, live rooms, joined participants, egress, tracks, ingress, and webhook events", async () => {
     const t = initConvexTest();
 
     await t.mutation(api.lib.recordRoom, { name: "r1", status: "started" });
@@ -346,6 +418,13 @@ describe("dashboard queries", () => {
     });
 
     await t.mutation(api.lib.recordEgress, { egressId: "EG_10", status: "EGRESS_ACTIVE" });
+
+    await t.mutation(api.lib.recordIngress, {
+      ingressId: "IN_stats",
+      roomName: "r1",
+      participantIdentity: "encoder",
+      inputType: "rtmp",
+    });
 
     await t.mutation(api.lib.recordTrack, {
       trackSid: "TR_30",
@@ -378,6 +457,7 @@ describe("dashboard queries", () => {
     expect(stats.egressCount).toBe(1);
     expect(stats.trackCount).toBe(2);
     expect(stats.liveTrackCount).toBe(1);
+    expect(stats.ingressCount).toBe(1);
     expect(stats.webhookEventCount).toBe(1);
   });
 
