@@ -184,14 +184,17 @@ function backoffDelayMs(attempt: number): number {
 }
 
 /**
- * LiveKit's Twirp API responses and webhook payloads serialize protobuf
- * messages using their original snake_case field names (protojson with
- * original proto names), not the lowerCamelCase every type in this file
- * assumes — confirmed by inspecting a live StartRoomCompositeEgress
- * response, which comes back as `{ egress_id, room_name, started_at, ... }`.
- * Deliberately shallow (only the object's own keys, never recursing into a
- * field's value) so it never mangles a value that's itself a map with
- * caller-defined keys, such as ParticipantInfo.attributes.
+ * LiveKit's Twirp API responses serialize protobuf messages using their
+ * original snake_case field names (protojson with original proto names),
+ * not the lowerCamelCase every type in this file assumes — confirmed by
+ * inspecting a live StartRoomCompositeEgress response, which comes back as
+ * `{ egress_id, room_name, started_at, ... }`. Webhook payloads use plain
+ * protojson (camelCase) instead, confirmed against real received events —
+ * applying this there is a no-op, done anyway for defense in depth, since a
+ * shallow, idempotent transform costs nothing on data that's already
+ * camelCase. Deliberately shallow (only the object's own keys, never
+ * recursing into a field's value) so it never mangles a value that's itself
+ * a map with caller-defined keys, such as ParticipantInfo.attributes.
  */
 function snakeToCamelShallow<T>(value: unknown): T {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -378,10 +381,9 @@ export class LiveKit {
         });
       }
 
-      // Same snake_case-vs-camelCase mismatch as twirp responses (see
-      // snakeToCamelShallow above) — LiveKit's webhook body is protojson
-      // too, so `egress_info`/`ingress_info`/`num_participants` etc. would
-      // otherwise silently fail every `event.egressInfo`-style read below.
+      // Unlike Twirp responses, webhook bodies are already camelCase, so
+      // this is a no-op in practice — kept for defense in depth (see
+      // snakeToCamelShallow's doc comment above).
       const event = snakeToCamelShallow<Record<string, unknown>>(JSON.parse(rawBody));
       const eventId = event.id ? String(event.id) : undefined;
       const eventType = (event.event as string) ?? "unknown";
