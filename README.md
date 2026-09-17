@@ -5,7 +5,7 @@ Convex database reactively, and manage rooms, participants, tracks, egress,
 and ingress directly from Convex functions.
 
 [![npm version](https://img.shields.io/npm/v/convex-livekit.svg)](https://www.npmjs.com/package/convex-livekit)
-[![Convex Component](https://www.convex.dev/components/badge/sholajegede/convex-livekit)](https://www.convex.dev/components/sholajegede/convex-livekit)
+[![Convex Component](https://www.convex.dev/components/badge/sholajegede/convex-livekit)](https://www.convex.dev/components/convex-livekit)
 [![npm downloads](https://img.shields.io/npm/dm/convex-livekit.svg)](https://www.npmjs.com/package/convex-livekit)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
