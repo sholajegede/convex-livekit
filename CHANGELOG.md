@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.9
+
+### Patch Changes
+
+- Fix the Convex directory badge image URL, which still pointed at `badge/sholajegede/convex-livekit` after the link URL was corrected in a previous release; both now use the plain `badge/convex-livekit` path.
+
+## 0.0.8
+
+### Patch Changes
+
+- Drop the username scope from the Convex directory badge link in README, matching the directory's updated URL format
+
 ## 0.0.7
 
 ### Patch Changes
